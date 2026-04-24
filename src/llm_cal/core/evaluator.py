@@ -13,14 +13,19 @@ from llm_cal.architecture.detector import detect
 from llm_cal.architecture.formulas.kv_cache import compute_kv_cache_bytes
 from llm_cal.architecture.formulas.weight import estimate_total_params
 from llm_cal.architecture.profile import ArchitectureProfile
+from llm_cal.command_generator.sglang import generate_sglang_command
+from llm_cal.command_generator.vllm import generate_vllm_command
 from llm_cal.core.cache import ArtifactCache, CacheKey
 from llm_cal.engine_compat.loader import EngineCompatEntry, find_match
+from llm_cal.fleet.planner import FleetRecommendation, plan
 from llm_cal.hardware.loader import GPUSpec, UnknownGPUError, lookup
 from llm_cal.model_source.base import ModelArtifact, ModelSource
 from llm_cal.model_source.huggingface import HuggingFaceSource
 from llm_cal.output.labels import AnnotatedValue
 from llm_cal.weight_analyzer import WeightReport, analyze
 from llm_cal.weight_analyzer.reconciler import ReconciliationReport, reconcile
+
+_KV_REFERENCE_CTX = 131_072  # matches fleet.planner's _REFERENCE_CTX_TOKENS
 
 
 @dataclass(frozen=True)
@@ -40,6 +45,8 @@ class EvaluationReport:
     reconciliation: ReconciliationReport
     kv_cache_by_context: dict[int, AnnotatedValue[int]] = field(default_factory=dict)
     engine_match: EngineCompatEntry | None = None
+    fleet: FleetRecommendation | None = None
+    generated_command: str | None = None
 
 
 class Evaluator:
@@ -97,6 +104,35 @@ class Evaluator:
         except UnknownGPUError as e:
             gpu_error = str(e)
 
+        # Fleet planning — only if we have a known GPU. The planner's reference
+        # context is 128K; derive KV bytes there (computing fresh in case the
+        # user chose a non-overlapping context_length override).
+        fleet: FleetRecommendation | None = None
+        generated_command: str | None = None
+        if gpu_spec is not None and weight.total_bytes.value > 0:
+            kv_ref = compute_kv_cache_bytes(profile, _KV_REFERENCE_CTX, dtype_bytes=2)
+            fleet = plan(
+                profile=profile,
+                weight_bytes=weight.total_bytes.value,
+                kv_bytes_per_request_at_ref=max(1, kv_ref.value),
+                gpu=gpu_spec,
+                forced_gpu_count=gpu_count,
+            )
+            # Pick the gpu_count to emit the command for: user's forced value,
+            # else the best_tier's recommendation.
+            chosen_count = gpu_count or next(
+                (o.gpu_count for o in fleet.options if o.tier == fleet.best_tier),
+                fleet.options[0].gpu_count,
+            )
+            generated_command = _generate_command(
+                engine=engine,
+                model_id=model_id,
+                profile=profile,
+                tp=chosen_count,
+                entry=engine_match,
+                max_model_len=context_length,
+            )
+
         return EvaluationReport(
             model_id=model_id,
             source=artifact.source,
@@ -111,6 +147,8 @@ class Evaluator:
             reconciliation=reconciliation,
             kv_cache_by_context=kv_by_ctx,
             engine_match=engine_match,
+            fleet=fleet,
+            generated_command=generated_command,
         )
 
     def _fetch(self, model_id: str, refresh: bool) -> ModelArtifact:
@@ -137,3 +175,17 @@ class Evaluator:
         if max_pos:
             candidates = [c for c in candidates if c <= max_pos]
         return candidates
+
+
+def _generate_command(
+    engine: str,
+    model_id: str,
+    profile: ArchitectureProfile,
+    tp: int,
+    entry: EngineCompatEntry | None,
+    max_model_len: int | None,
+) -> str:
+    engine_norm = engine.lower().strip()
+    if engine_norm == "sglang":
+        return generate_sglang_command(model_id, profile, tp, entry, max_model_len=max_model_len)
+    return generate_vllm_command(model_id, profile, tp, entry, max_model_len=max_model_len)

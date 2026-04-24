@@ -170,6 +170,47 @@ _MESSAGES: dict[str, dict[Locale, str]] = {
     "source.announcement": {"en": "announcement", "zh": "官方公告"},
     "source.tested": {"en": "tested", "zh": "实测"},
     "source.captured_on": {"en": "captured on", "zh": "采集于"},
+    # Fleet planner
+    "section.fleet": {
+        "en": "Recommended fleet",
+        "zh": "推荐 GPU 张数",
+    },
+    "fleet.col.tier": {"en": "tier", "zh": "档位"},
+    "fleet.col.gpus": {"en": "GPUs", "zh": "GPU 数"},
+    "fleet.col.weight_per_gpu": {
+        "en": "weight / GPU",
+        "zh": "单卡权重",
+    },
+    "fleet.col.headroom_per_gpu": {
+        "en": "headroom / GPU",
+        "zh": "单卡余量",
+    },
+    "fleet.col.fit": {"en": "fit", "zh": "评估"},
+    "fleet.tier.min": {"en": "min", "zh": "最小"},
+    "fleet.tier.dev": {"en": "dev", "zh": "开发"},
+    "fleet.tier.prod": {"en": "prod", "zh": "生产"},
+    "fleet.best_marker": {
+        "en": "= recommended",
+        "zh": "= 推荐档位",
+    },
+    "fleet.constraint": {"en": "constraint:", "zh": "约束："},
+    "fleet.forced": {
+        "en": "Forced GPU count (--gpu-count was set)",
+        "zh": "已强制指定 GPU 张数（--gpu-count）",
+    },
+    "fleet.gpu_spec_unknown": {
+        "en": "Fleet planning skipped — GPU spec unknown.",
+        "zh": "GPU 规格未知，跳过 fleet 规划。",
+    },
+    # Command generator
+    "section.command": {
+        "en": "Generated command",
+        "zh": "生成的启动命令",
+    },
+    "command.tier_note": {
+        "en": "tier: {tier} ({gpus} GPUs)",
+        "zh": "档位：{tier}（{gpus} 张）",
+    },
 }
 
 

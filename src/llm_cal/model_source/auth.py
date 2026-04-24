@@ -28,6 +28,6 @@ def hf_auth_error_message(model_id: str) -> str:
 def modelscope_auth_error_message(model_id: str) -> str:
     # Chinese user-facing message — full-width punctuation is intentional.
     return (
-        f"模型 '{model_id}' 需要登录（gated 或 私有）。\n"  # noqa: RUF001
-        "设置 MODELSCOPE_API_TOKEN 环境变量，或执行：modelscope login"  # noqa: RUF001
+        f"模型 '{model_id}' 需要登录（gated 或 私有）。\n"
+        "设置 MODELSCOPE_API_TOKEN 环境变量，或执行：modelscope login"
     )

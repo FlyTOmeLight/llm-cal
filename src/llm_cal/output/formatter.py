@@ -69,6 +69,8 @@ def render(report: EvaluationReport, console: Console | None = None) -> None:
     _render_kv_cache(report, console)
     _render_engine_compat(report, console)
     _render_hardware(report, console)
+    _render_fleet(report, console)
+    _render_command(report, console)
     _render_label_legend(console)
 
 
@@ -287,6 +289,73 @@ def _render_hardware(report: EvaluationReport, console: Console) -> None:
     if notes:
         table.add_row(t("hw.notes"), notes)
     console.print(table)
+
+
+def _render_fleet(report: EvaluationReport, console: Console) -> None:
+    f = report.fleet
+    if f is None:
+        # Either GPU unknown or weight_bytes=0. Surface a dim message.
+        if report.gpu_spec is None:
+            return  # hardware section already surfaced the error
+        console.print(f"[dim]{t('fleet.gpu_spec_unknown')}[/dim]")
+        return
+
+    table = Table(
+        title=f"{t('section.fleet')} — {report.gpu_spec.id if report.gpu_spec else report.gpu}",
+        title_justify="left",
+        show_header=True,
+        header_style="dim",
+        box=None,
+        padding=(0, 2),
+    )
+    table.add_column(t("fleet.col.tier"))
+    table.add_column(t("fleet.col.gpus"), justify="right")
+    table.add_column(t("fleet.col.weight_per_gpu"), justify="right")
+    table.add_column(t("fleet.col.headroom_per_gpu"), justify="right")
+    table.add_column(t("fleet.col.fit"))
+
+    locale = get_locale()
+    for opt in f.options:
+        headroom = opt.usable_bytes_per_gpu - opt.weight_bytes_per_gpu
+        reason = opt.reason_zh if locale == "zh" else opt.reason_en
+        label_tier = t(f"fleet.tier.{opt.tier}")
+        marker = " ★" if opt.tier == f.best_tier else ""
+        fit_icon = "✓ " if opt.fits else "✗ "
+        row_style = None if opt.fits else "dim red"
+        table.add_row(
+            f"{label_tier}{marker}",
+            str(opt.gpu_count),
+            _fmt_bytes(opt.weight_bytes_per_gpu),
+            _fmt_bytes(headroom) if headroom > 0 else "—",
+            f"{fit_icon}{reason}",
+            style=row_style,
+        )
+    console.print(table)
+
+    note = f.constraint_note_zh if locale == "zh" else f.constraint_note_en
+    console.print(f"[dim]{t('fleet.constraint')} {note}[/dim]")
+    console.print(f"[dim]★ {t('fleet.best_marker')}[/dim]")
+
+
+def _render_command(report: EvaluationReport, console: Console) -> None:
+    if not report.generated_command or report.fleet is None:
+        return
+    # Figure out which tier we emitted the command for.
+    best_tier_opt = next(
+        (o for o in report.fleet.options if o.tier == report.fleet.best_tier),
+        report.fleet.options[0],
+    )
+    tier_label = t(f"fleet.tier.{best_tier_opt.tier}")
+    header_note = t("command.tier_note", tier=tier_label, gpus=best_tier_opt.gpu_count)
+    console.print()
+    console.print(
+        Panel(
+            report.generated_command,
+            title=f"{t('section.command')} — {header_note}",
+            title_align="left",
+            border_style="green",
+        )
+    )
 
 
 def _render_label_legend(console: Console) -> None:
