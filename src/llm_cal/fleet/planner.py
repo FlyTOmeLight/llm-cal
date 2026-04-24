@@ -13,9 +13,20 @@ heads must be divisible by the number of GPUs. vLLM/SGLang with TP=3 on a
 Reserved overhead per GPU = 10% of HBM (CUDA context + activations + framework),
 which matches `--gpu-memory-utilization 0.9` in vLLM.
 
-Per-GPU KV estimation is conservative: we assume KV is fully replicated
-across ranks. For GQA with many kv_heads this overestimates; for MQA
-(num_kv_heads=1) this is accurate. Safer to overestimate than undershoot.
+Per-GPU KV modeling is TP-aware:
+
+  per_gpu_KV = total_KV / min(tp_size, max(1, num_kv_heads))
+
+  * MQA (kv_heads=1): KV replicates fully across ranks → divisor is 1,
+    per-GPU KV = total (accurate for DeepSeek V4-Flash, Qwen MQA variants).
+  * GQA (kv_heads=8): KV splits across ranks up to num_kv_heads → at TP=8,
+    per-GPU KV = total/8 (accurate for Llama 3 70B, Qwen 72B).
+  * MHA: splits fully up to num_heads.
+
+This matches vLLM/SGLang's actual sharding behavior. MLA-latent KV is
+technically replicated in most frameworks, but since num_kv_heads is
+typically 1 in MLA (DeepSeek V2/V3/V4), the formula degenerates to
+replication anyway.
 """
 
 from __future__ import annotations
@@ -112,6 +123,7 @@ def plan(
     for tier in ("min", "dev", "prod"):
         gpu_count = _smallest_fitting_count(
             valid_tp,
+            profile=profile,
             weight_bytes=weight_bytes,
             kv_bytes=kv_bytes_per_request_at_ref,
             usable_per_gpu=usable_per_gpu,
@@ -151,29 +163,45 @@ def _valid_tp_sizes(profile: ArchitectureProfile) -> list[int]:
     return divisors or [1]
 
 
+def _kv_shards(profile: ArchitectureProfile, tp_size: int) -> int:
+    """How many ways KV cache can be split across TP ranks.
+
+    Saturates at num_kv_heads: once tp_size > num_kv_heads, extra ranks
+    just replicate, so the divisor stops growing.
+    """
+    if profile.attention is None:
+        return 1
+    kv_heads = max(1, profile.attention.num_kv_heads)
+    return min(tp_size, kv_heads)
+
+
 def _smallest_fitting_count(
     valid_tp: list[int],
     *,
+    profile: ArchitectureProfile,
     weight_bytes: int,
     kv_bytes: int,
     usable_per_gpu: int,
     concurrent: int,
 ) -> int | None:
     for n in valid_tp:
-        if _fits(n, weight_bytes, kv_bytes, usable_per_gpu, concurrent):
+        if _fits(n, profile, weight_bytes, kv_bytes, usable_per_gpu, concurrent):
             return n
     return None
 
 
 def _fits(
     gpu_count: int,
+    profile: ArchitectureProfile,
     weight_bytes: int,
     kv_bytes: int,
     usable_per_gpu: int,
     concurrent: int,
 ) -> bool:
     weight_per_gpu = math.ceil(weight_bytes / gpu_count)
-    needed = weight_per_gpu + concurrent * kv_bytes
+    shards = _kv_shards(profile, gpu_count)
+    kv_per_gpu = math.ceil(kv_bytes / shards)
+    needed = weight_per_gpu + concurrent * kv_per_gpu
     return needed <= usable_per_gpu
 
 
@@ -189,14 +217,22 @@ def _evaluate_count(
     kv_by_context: dict[int, int],
 ) -> FleetOption:
     weight_per_gpu = math.ceil(weight_bytes / gpu_count)
+    shards = _kv_shards(profile, gpu_count)
+    kv_per_gpu = math.ceil(kv_bytes / shards)
     headroom = usable_per_gpu - weight_per_gpu
-    max_concurrent = max(0, headroom // kv_bytes) if kv_bytes > 0 else 0
-    # Per-context concurrency, sorted by context length ascending.
+    max_concurrent = max(0, headroom // kv_per_gpu) if kv_per_gpu > 0 else 0
+    # Per-context concurrency, sorted by context length ascending, each using
+    # the TP-sharded per-GPU KV.
     max_concurrent_by_ctx = tuple(
-        (ctx, max(0, headroom // kv) if kv > 0 else 0) for ctx, kv in sorted(kv_by_context.items())
+        (
+            ctx,
+            (max(0, headroom // math.ceil(kv / shards)) if kv > 0 else 0),
+        )
+        for ctx, kv in sorted(kv_by_context.items())
     )
     fits = _fits(
         gpu_count,
+        profile,
         weight_bytes,
         kv_bytes,
         usable_per_gpu,

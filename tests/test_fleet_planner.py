@@ -229,3 +229,59 @@ class TestLlamaDense:
         min_opt = next(o for o in rec.options if o.tier == "min")
         assert min_opt.gpu_count <= 2
         assert min_opt.fits
+
+
+class TestTPShardingOfKV:
+    """CRITICAL modeling fix: GQA KV cache splits across TP ranks.
+
+    A 70B GQA model with kv_heads=8 on TP=8 should give each rank 1/8 of
+    the KV cache. Previous version treated it as replication (1x) — that
+    conservatively overestimated KV pressure by ~8x.
+    """
+
+    def test_gqa_kv_divides_by_tp(self):
+        """Llama-3 70B at 128K: total KV ~10 GB (rough), TP=8 → ~1.25 GB/GPU."""
+        gpu = lookup("H100")
+        profile = _llama_profile()  # GQA kv_heads=8
+        total_kv_128k = 10_000_000_000  # 10 GB total
+        rec = plan(
+            profile,
+            140_000_000_000,
+            total_kv_128k,
+            gpu,
+            kv_bytes_by_context={131_072: total_kv_128k},
+        )
+        prod = next(o for o in rec.options if o.tier == "prod")
+        # With TP=8 and 8 kv_heads, each GPU holds ~1/8 the KV.
+        # Headroom at TP=8: (72 - 17.5) = ~54.5 GB per GPU.
+        # kv_per_gpu = 10/8 = 1.25 GB → ~43 concurrent @ 128K.
+        ctx_map = dict(prod.max_concurrent_by_context)
+        assert ctx_map[131_072] > 30, (
+            f"expected >30 concurrent under TP-aware sharding, got {ctx_map[131_072]}"
+        )
+
+    def test_mqa_kv_stays_replicated(self):
+        """MQA (kv_heads=1) cannot shard — per-GPU KV = total KV."""
+        gpu = lookup("H800")
+        profile = _deepseek_v4_profile()  # MQA kv_heads=1
+        rec = plan(
+            profile,
+            160_000_000_000,
+            2_200_000_000,
+            gpu,
+            kv_bytes_by_context={131_072: 2_200_000_000},
+        )
+        prod = next(o for o in rec.options if o.tier == "prod")
+        ctx_map = dict(prod.max_concurrent_by_context)
+        # Unchanged from pre-refactor: ~23 concurrent @ 128K
+        assert 15 <= ctx_map[131_072] <= 35
+
+    def test_shards_saturate_at_num_kv_heads(self):
+        """TP=16 on a kv_heads=8 model still shards only 8 ways (4090-scale tests)."""
+        from llm_cal.fleet.planner import _kv_shards
+
+        profile = _llama_profile()  # kv_heads=8
+        assert _kv_shards(profile, tp_size=1) == 1
+        assert _kv_shards(profile, tp_size=2) == 2
+        assert _kv_shards(profile, tp_size=8) == 8
+        assert _kv_shards(profile, tp_size=16) == 8  # saturated
