@@ -47,10 +47,13 @@ class FleetOption:
     tier: Tier
     gpu_count: int
     weight_bytes_per_gpu: int
-    kv_bytes_per_request: int
+    kv_bytes_per_request: int  # at reference context (128K)
     max_concurrent_at_reference_ctx: int
+    # concurrency ceiling at each context length the user asked about.
+    # Key = context token count, value = max concurrent requests that fit.
+    max_concurrent_by_context: tuple[tuple[int, int], ...]
     usable_bytes_per_gpu: int
-    fits: bool  # False => the best we can do still overflows headroom
+    fits: bool  # False => the best we can do still overflows headroom at reference ctx
     reason_en: str
     reason_zh: str
 
@@ -70,8 +73,15 @@ def plan(
     kv_bytes_per_request_at_ref: int,
     gpu: GPUSpec,
     forced_gpu_count: int | None = None,
+    kv_bytes_by_context: dict[int, int] | None = None,
 ) -> FleetRecommendation:
-    """Recommend GPU counts for the three tiers, or a single option when forced."""
+    """Recommend GPU counts for the three tiers, or a single option when forced.
+
+    `kv_bytes_by_context` is optional metadata used only for the per-option
+    concurrency breakdown (e.g. "~23 concurrent @ 128K, ~2 @ 1M"). Tier-fit
+    decisions still use `kv_bytes_per_request_at_ref` (the reference context).
+    """
+    kv_by_ctx = kv_bytes_by_context or {}
     bytes_per_gpu_total = gpu.memory_gb * 1_000_000_000
     usable_per_gpu = int(bytes_per_gpu_total * (1 - _OVERHEAD_FRACTION))
     valid_tp = _valid_tp_sizes(profile)
@@ -88,6 +98,7 @@ def plan(
             usable_per_gpu=usable_per_gpu,
             valid_tp=valid_tp,
             tier="dev",  # generic label when user forced
+            kv_by_context=kv_by_ctx,
         )
         return FleetRecommendation(
             options=(option,),
@@ -116,6 +127,7 @@ def plan(
             usable_per_gpu=usable_per_gpu,
             valid_tp=valid_tp,
             tier=tier,
+            kv_by_context=kv_by_ctx,
         )
         options.append(option)
 
@@ -174,10 +186,15 @@ def _evaluate_count(
     usable_per_gpu: int,
     valid_tp: list[int],
     tier: Tier,
+    kv_by_context: dict[int, int],
 ) -> FleetOption:
     weight_per_gpu = math.ceil(weight_bytes / gpu_count)
     headroom = usable_per_gpu - weight_per_gpu
     max_concurrent = max(0, headroom // kv_bytes) if kv_bytes > 0 else 0
+    # Per-context concurrency, sorted by context length ascending.
+    max_concurrent_by_ctx = tuple(
+        (ctx, max(0, headroom // kv) if kv > 0 else 0) for ctx, kv in sorted(kv_by_context.items())
+    )
     fits = _fits(
         gpu_count,
         weight_bytes,
@@ -211,6 +228,7 @@ def _evaluate_count(
         weight_bytes_per_gpu=weight_per_gpu,
         kv_bytes_per_request=kv_bytes,
         max_concurrent_at_reference_ctx=max_concurrent,
+        max_concurrent_by_context=max_concurrent_by_ctx,
         usable_bytes_per_gpu=usable_per_gpu,
         fits=fits,
         reason_en=reason_en,

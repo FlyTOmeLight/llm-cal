@@ -111,12 +111,14 @@ class Evaluator:
         generated_command: str | None = None
         if gpu_spec is not None and weight.total_bytes.value > 0:
             kv_ref = compute_kv_cache_bytes(profile, _KV_REFERENCE_CTX, dtype_bytes=2)
+            kv_by_context_bytes = {ctx: av.value for ctx, av in kv_by_ctx.items() if av.value > 0}
             fleet = plan(
                 profile=profile,
                 weight_bytes=weight.total_bytes.value,
                 kv_bytes_per_request_at_ref=max(1, kv_ref.value),
                 gpu=gpu_spec,
                 forced_gpu_count=gpu_count,
+                kv_bytes_by_context=kv_by_context_bytes,
             )
             # Pick the gpu_count to emit the command for: user's forced value,
             # else the best_tier's recommendation.

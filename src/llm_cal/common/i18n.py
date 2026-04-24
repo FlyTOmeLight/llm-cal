@@ -186,6 +186,10 @@ _MESSAGES: dict[str, dict[Locale, str]] = {
         "zh": "单卡余量",
     },
     "fleet.col.fit": {"en": "fit", "zh": "评估"},
+    "fleet.col.concurrent_at_ctx": {
+        "en": "concurrent @ {ctx}",
+        "zh": "并发 @ {ctx}",
+    },
     "fleet.tier.min": {"en": "min", "zh": "最小"},
     "fleet.tier.dev": {"en": "dev", "zh": "开发"},
     "fleet.tier.prod": {"en": "prod", "zh": "生产"},

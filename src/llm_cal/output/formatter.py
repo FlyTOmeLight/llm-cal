@@ -16,6 +16,7 @@ from rich.text import Text
 from llm_cal.common.i18n import get_locale, t
 from llm_cal.core.evaluator import EvaluationReport
 from llm_cal.engine_compat.loader import EngineCompatEntry, EngineFlag, EngineSource
+from llm_cal.fleet.planner import FleetRecommendation
 from llm_cal.output.labels import AnnotatedValue, Label
 
 _LABEL_STYLES: dict[Label, str] = {
@@ -294,11 +295,13 @@ def _render_hardware(report: EvaluationReport, console: Console) -> None:
 def _render_fleet(report: EvaluationReport, console: Console) -> None:
     f = report.fleet
     if f is None:
-        # Either GPU unknown or weight_bytes=0. Surface a dim message.
         if report.gpu_spec is None:
             return  # hardware section already surfaced the error
         console.print(f"[dim]{t('fleet.gpu_spec_unknown')}[/dim]")
         return
+
+    # Decide which context lengths to surface as concurrency columns.
+    ctx_cols = _select_concurrency_columns(f)
 
     table = Table(
         title=f"{t('section.fleet')} — {report.gpu_spec.id if report.gpu_spec else report.gpu}",
@@ -312,29 +315,69 @@ def _render_fleet(report: EvaluationReport, console: Console) -> None:
     table.add_column(t("fleet.col.gpus"), justify="right")
     table.add_column(t("fleet.col.weight_per_gpu"), justify="right")
     table.add_column(t("fleet.col.headroom_per_gpu"), justify="right")
-    table.add_column(t("fleet.col.fit"))
+    for ctx in ctx_cols:
+        table.add_column(
+            t("fleet.col.concurrent_at_ctx", ctx=_fmt_ctx(ctx)),
+            justify="right",
+        )
 
-    locale = get_locale()
     for opt in f.options:
         headroom = opt.usable_bytes_per_gpu - opt.weight_bytes_per_gpu
-        reason = opt.reason_zh if locale == "zh" else opt.reason_en
         label_tier = t(f"fleet.tier.{opt.tier}")
         marker = " ★" if opt.tier == f.best_tier else ""
-        fit_icon = "✓ " if opt.fits else "✗ "
         row_style = None if opt.fits else "dim red"
-        table.add_row(
+        conc_map = dict(opt.max_concurrent_by_context)
+        row = [
             f"{label_tier}{marker}",
             str(opt.gpu_count),
             _fmt_bytes(opt.weight_bytes_per_gpu),
             _fmt_bytes(headroom) if headroom > 0 else "—",
-            f"{fit_icon}{reason}",
-            style=row_style,
-        )
+        ]
+        for ctx in ctx_cols:
+            n = conc_map.get(ctx, 0)
+            row.append(f"~{n}" if n > 0 else "✗")
+        table.add_row(*row, style=row_style)
+
     console.print(table)
 
+    locale = get_locale()
     note = f.constraint_note_zh if locale == "zh" else f.constraint_note_en
     console.print(f"[dim]{t('fleet.constraint')} {note}[/dim]")
     console.print(f"[dim]★ {t('fleet.best_marker')}[/dim]")
+
+
+def _select_concurrency_columns(f: FleetRecommendation) -> list[int]:
+    """Pick which context lengths become concurrency columns in the fleet table.
+
+    Rule: always include 128K if the model supports it; additionally include the
+    model's max context if it's larger than 128K. For shorter-context models,
+    fall back to 32K or whatever the max is.
+    """
+    all_ctxs: set[int] = set()
+    for opt in f.options:
+        for ctx, _ in opt.max_concurrent_by_context:
+            all_ctxs.add(ctx)
+    if not all_ctxs:
+        return []
+    picks: list[int] = []
+    if 131_072 in all_ctxs:
+        picks.append(131_072)
+    max_ctx = max(all_ctxs)
+    if max_ctx > 131_072 and max_ctx not in picks:
+        picks.append(max_ctx)
+    if not picks:
+        picks.append(32_768 if 32_768 in all_ctxs else max_ctx)
+    return picks
+
+
+def _fmt_ctx(ctx_tokens: int) -> str:
+    if ctx_tokens >= 1_000_000:
+        if ctx_tokens % 1_000_000 == 0:
+            return f"{ctx_tokens // 1_000_000}M"
+        return f"{ctx_tokens / 1_000_000:.1f}M"
+    if ctx_tokens >= 1024:
+        return f"{ctx_tokens // 1024}K"
+    return str(ctx_tokens)
 
 
 def _render_command(report: EvaluationReport, console: Console) -> None:

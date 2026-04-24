@@ -62,7 +62,13 @@ class TestTPDivisibility:
     def test_64_heads_valid_tp_is_powers_of_two_up_to_8(self):
         gpu = lookup("H800")
         profile = _deepseek_v4_profile()
-        rec = plan(profile, 160_000_000_000, 2_200_000_000, gpu)
+        rec = plan(
+            profile,
+            160_000_000_000,
+            2_200_000_000,
+            gpu,
+            kv_bytes_by_context={131_072: 2_200_000_000, 1_048_576: 17_640_000_000},
+        )
         # All recommended counts must divide num_heads=64
         for opt in rec.options:
             assert 64 % opt.gpu_count == 0, (
@@ -74,7 +80,13 @@ class TestTPDivisibility:
         """Negative test: none of the options should be these counts."""
         gpu = lookup("H800")
         profile = _deepseek_v4_profile()
-        rec = plan(profile, 160_000_000_000, 2_200_000_000, gpu)
+        rec = plan(
+            profile,
+            160_000_000_000,
+            2_200_000_000,
+            gpu,
+            kv_bytes_by_context={131_072: 2_200_000_000, 1_048_576: 17_640_000_000},
+        )
         forbidden = {3, 5, 6, 7}
         actual_counts = {opt.gpu_count for opt in rec.options}
         assert not (actual_counts & forbidden)
@@ -82,7 +94,13 @@ class TestTPDivisibility:
     def test_valid_tp_sizes_reported(self):
         profile = _deepseek_v4_profile()
         gpu = lookup("H800")
-        rec = plan(profile, 160_000_000_000, 2_200_000_000, gpu)
+        rec = plan(
+            profile,
+            160_000_000_000,
+            2_200_000_000,
+            gpu,
+            kv_bytes_by_context={131_072: 2_200_000_000, 1_048_576: 17_640_000_000},
+        )
         # num_heads=64, capped at 8-GPU single-node → divisors in [1..8] of 64
         assert rec.valid_tp_sizes == (1, 2, 4, 8)
 
@@ -91,7 +109,13 @@ class TestThreeTierRecommendation:
     def test_all_three_tiers_present(self):
         gpu = lookup("H800")
         profile = _deepseek_v4_profile()
-        rec = plan(profile, 160_000_000_000, 2_200_000_000, gpu)
+        rec = plan(
+            profile,
+            160_000_000_000,
+            2_200_000_000,
+            gpu,
+            kv_bytes_by_context={131_072: 2_200_000_000, 1_048_576: 17_640_000_000},
+        )
         tiers = [o.tier for o in rec.options]
         assert tiers == ["min", "dev", "prod"]
 
@@ -100,7 +124,13 @@ class TestThreeTierRecommendation:
         Production tier (16 concurrent) needs 8 GPUs."""
         gpu = lookup("H800")
         profile = _deepseek_v4_profile()
-        rec = plan(profile, 160_000_000_000, 2_200_000_000, gpu)
+        rec = plan(
+            profile,
+            160_000_000_000,
+            2_200_000_000,
+            gpu,
+            kv_bytes_by_context={131_072: 2_200_000_000, 1_048_576: 17_640_000_000},
+        )
         prod = next(o for o in rec.options if o.tier == "prod")
         assert prod.gpu_count == 8
         assert prod.fits
@@ -110,7 +140,14 @@ class TestForcedGPUCount:
     def test_forced_count_returns_single_option(self):
         gpu = lookup("H800")
         profile = _deepseek_v4_profile()
-        rec = plan(profile, 160_000_000_000, 2_200_000_000, gpu, forced_gpu_count=8)
+        rec = plan(
+            profile,
+            160_000_000_000,
+            2_200_000_000,
+            gpu,
+            forced_gpu_count=8,
+            kv_bytes_by_context={131_072: 2_200_000_000, 1_048_576: 17_640_000_000},
+        )
         assert len(rec.options) == 1
         assert rec.options[0].gpu_count == 8
 
@@ -119,7 +156,14 @@ class TestForcedGPUCount:
         explains the divisibility violation."""
         gpu = lookup("H800")
         profile = _deepseek_v4_profile()
-        rec = plan(profile, 160_000_000_000, 2_200_000_000, gpu, forced_gpu_count=3)
+        rec = plan(
+            profile,
+            160_000_000_000,
+            2_200_000_000,
+            gpu,
+            forced_gpu_count=3,
+            kv_bytes_by_context={131_072: 2_200_000_000},
+        )
         opt = rec.options[0]
         assert opt.gpu_count == 3
         assert "divide" in opt.reason_en.lower()
@@ -133,11 +177,41 @@ class TestOversizedModel:
         """
         gpu = lookup("H800")
         profile = _deepseek_v4_profile()
-        rec = plan(profile, 2_000_000_000_000, 2_200_000_000, gpu)
+        rec = plan(
+            profile,
+            2_000_000_000_000,
+            2_200_000_000,
+            gpu,
+            kv_bytes_by_context={131_072: 2_200_000_000},
+        )
         # The planner falls back to max TP (8), but fits=False on all tiers.
         for opt in rec.options:
             assert opt.gpu_count == 8  # fallback max
             assert not opt.fits
+
+
+class TestMultiContextConcurrency:
+    """Verify the planner reports concurrent capacity at each surveyed context."""
+
+    def test_deepseek_v4_8_gpus_fits_1m_at_least_once(self):
+        """Headline: 8xH800 on DeepSeek-V4-Flash supports at least one request at 1M."""
+        gpu = lookup("H800")
+        profile = _deepseek_v4_profile()
+        rec = plan(
+            profile,
+            160_000_000_000,
+            2_200_000_000,
+            gpu,
+            kv_bytes_by_context={
+                131_072: 2_200_000_000,
+                1_048_576: 17_640_000_000,
+            },
+        )
+        prod = next(o for o in rec.options if o.tier == "prod")
+        ctx_map = dict(prod.max_concurrent_by_context)
+        assert ctx_map[1_048_576] >= 1
+        # And 128K density is of course much higher
+        assert ctx_map[131_072] > ctx_map[1_048_576]
 
 
 class TestLlamaDense:
@@ -145,7 +219,13 @@ class TestLlamaDense:
         """70B at BF16 → ~140 GB, H100 has 80 GB → TP=2 works."""
         gpu = lookup("H100")
         profile = _llama_profile()
-        rec = plan(profile, 140_000_000_000, 1_000_000_000, gpu)
+        rec = plan(
+            profile,
+            140_000_000_000,
+            1_000_000_000,
+            gpu,
+            kv_bytes_by_context={131_072: 1_000_000_000},
+        )
         min_opt = next(o for o in rec.options if o.tier == "min")
         assert min_opt.gpu_count <= 2
         assert min_opt.fits
