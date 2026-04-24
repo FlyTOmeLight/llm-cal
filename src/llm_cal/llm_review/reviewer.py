@@ -85,7 +85,7 @@ def run_review(
                         {"role": "user", "content": prompt},
                     ],
                     "temperature": 0.1,
-                    "max_tokens": 2000,
+                    "max_tokens": 6000,
                 },
             )
     except (httpx.TimeoutException, httpx.ConnectError) as e:
