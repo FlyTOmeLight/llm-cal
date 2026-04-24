@@ -46,3 +46,7 @@ env/
 
 # Fixture capture temp outputs (actual fixtures under tests/fixtures/ are committed)
 tests/fixtures/_tmp/
+
+# mkdocs build output
+site/
+.mkdocs_cache/
