@@ -110,8 +110,9 @@ class HuggingFaceSource(ModelSource):
             raise SourceUnavailableError(f"config.json fetch returned HTTP {resp.status_code}")
 
         try:
-            return json.loads(resp.text)
+            parsed: dict[str, Any] = json.loads(resp.text)
         except json.JSONDecodeError as e:
             raise SourceUnavailableError(
                 f"config.json is not valid JSON (line {e.lineno} col {e.colno}): {e.msg}"
             ) from e
+        return parsed
