@@ -64,9 +64,14 @@ def test_database_loads_and_has_all_expected_gpus():
         "MTT-S3000",
         # More international
         "GH200",
+        "GB200",
         "MI325X",
         "MI210",
         "V100-PCIe-32G",
+        # More Chinese domestic
+        "MLU590",
+        "Hygon-K100-AI",
+        "Hygon-Z100",
     }
     assert expected <= ids, f"missing: {expected - ids}"
 
@@ -170,6 +175,27 @@ def test_mi325x_is_biggest_single_card():
     largest = max(db.gpus, key=lambda g: g.memory_gb)
     assert largest.id == "MI325X"
     assert largest.memory_gb == 256
+
+
+def test_mlu590_vs_mlu370_progression():
+    """MLU590 should have more memory (80 GB vs 48 GB) and more compute than MLU370-X8."""
+    m590 = lookup("MLU590")
+    m370 = lookup("MLU370-X8")
+    assert m590.memory_gb > m370.memory_gb
+    assert m590.fp16_tflops > m370.fp16_tflops
+
+
+def test_hygon_cards_use_rocm_stack():
+    """Hygon cards should be findable via Chinese name."""
+    assert lookup("海光K100AI").id == "Hygon-K100-AI"
+    assert lookup("深算二号").id == "Hygon-Z100"
+
+
+def test_gb200_has_fp4_like_b200():
+    """GB200 (per-GPU view) inherits B200's FP4 capability."""
+    spec = lookup("GB200")
+    assert spec.fp4_support is True
+    assert spec.memory_gb == 192
 
 
 def test_t4_has_no_fp8_no_nvlink():

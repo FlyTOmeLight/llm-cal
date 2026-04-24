@@ -79,6 +79,17 @@ gpus:
     notes_en: "Grace Hopper superchip — Hopper GPU + Grace CPU on one module. 144 GB HBM3e (96 GB HBM3 variant also exists). NVLink-C2C 900 GB/s CPU<->GPU unified. TDP programmable 450-1000W. Ideal for models that spill beyond single GPU memory because GPU can access CPU LPDDR coherently."
     notes_zh: "Grace Hopper 超级芯片 — Hopper GPU + Grace CPU 融合模组。144 GB HBM3e（另有 96 GB HBM3 版本）。NVLink-C2C 让 CPU/GPU 共享统一内存空间，900 GB/s 双向。TDP 可编程 450-1000W。模型单卡显存装不下时，可一致地访问 CPU 的 LPDDR。"
 
+  - id: GB200
+    aliases: [Grace-Blackwell, GB200-per-GPU]
+    memory_gb: 192
+    nvlink_bandwidth_gbps: 1800
+    fp16_tflops: 2250
+    fp8_support: true
+    fp4_support: true
+    spec_source: "NVIDIA GB200 Superchip datasheet 2024 — per-GPU view. Each GB200 = 2 B200 + Grace CPU. Per B200: 192 GB HBM3e, 8 TB/s, 2250 TFLOPS dense FP16 (4500 sparsity). Grace CPU adds up to 480 GB LPDDR5x accessible via NVLink-C2C."
+    notes_en: "Grace Blackwell superchip — 2 B200 GPUs + Grace CPU on one module. Per-GPU specs here match B200, but each GB200 module unlocks 384 GB HBM3e total (192+192) plus coherent access to 480 GB Grace CPU LPDDR5x. FP4 native. Only deployable in NVL4/NVL72 rack-scale systems with liquid cooling. Per-GPU TDP 1200W."
+    notes_zh: "Grace Blackwell 超级芯片 — 双 B200 GPU + Grace CPU 融合。此处展示单 GPU 视角规格，与 B200 基本一致。每块 GB200 模组合计 384 GB HBM3e（双卡），并通过 NVLink-C2C 一致访问 480 GB Grace CPU 的 LPDDR5x。原生 FP4。仅在 NVL4 / NVL72 液冷机架系统中部署。单 GPU TDP 1200W。"
+
   - id: H20
     aliases: [H20-96G, H20-SXM]
     memory_gb: 96
@@ -498,6 +509,39 @@ gpus:
     spec_source: "Cambricon 寒武纪 MLU370-X8 (dual MLU370 chiplet, 250W). 48 GB LPDDR5, INT8 256 TOPS, FP32 24 TFLOPS (FP16 ~48 TFLOPS estimated, official not given). MLU-Link 200 GB/s."
     notes_en: "Cambricon (寒武纪) MLU370-X8 — dual-chip package, 250W. 48 GB LPDDR5 (not HBM), INT8 256 TOPS, FP32 24 TFLOPS. MLU-Link 200 GB/s for 8-card setups. LPDDR5 means lower memory bandwidth than HBM cards."
     notes_zh: "寒武纪 MLU370-X8 — 双芯粒封装，250W。48 GB LPDDR5（非 HBM），INT8 256 TOPS，FP32 24 TFLOPS。MLU-Link 200 GB/s，支持 8 卡部署。LPDDR5 意味着显存带宽低于 HBM 卡。"
+
+  - id: MLU590
+    aliases: [Cambricon-MLU590, 寒武纪MLU590, 思元590]
+    memory_gb: 80
+    nvlink_bandwidth_gbps: 372
+    fp16_tflops: 314
+    fp8_support: false
+    fp4_support: false
+    spec_source: "Cambricon 寒武纪 思元590 (MLU590) — 7nm, MLUv02/MLUarch05. 80 GB HBM (likely HBM2e based on 2 TB/s bandwidth), FP16 314 TFLOPS, FP32 80 TFLOPS, MLU-Link 372 GB/s. Used at Baidu ERNIE (文心一言) project."
+    notes_en: "Cambricon (寒武纪) MLU590 — flagship AI training chip. 80 GB HBM, 2 TB/s memory bandwidth. FP16 314 TFLOPS (dense). MLU-Link 372 GB/s 8-card fabric. Comparable FP16 compute to NVIDIA A100 level. No FP8. Production volume and ecosystem still maturing."
+    notes_zh: "寒武纪思元590 — 旗舰 AI 训练芯片。80 GB HBM，2 TB/s 显存带宽。FP16 314 TFLOPS（dense），综合性能约为 A100 级别。MLU-Link 372 GB/s 八卡互联。无 FP8。量产规模和生态仍在成熟。"
+
+  - id: Hygon-K100-AI
+    aliases: [K100-AI, 海光K100AI, DCU-K100-AI]
+    memory_gb: 64
+    nvlink_bandwidth_gbps: 184
+    fp16_tflops: 192
+    fp8_support: false
+    fp4_support: false
+    spec_source: "Hygon 海光 K100 AI — DCU architecture (GPGPU+AI hybrid), 64 GB HBM, 896 GB/s memory bandwidth, 350W TDP. FP16 192 TFLOPS dense (some sources cite 256 TFLOPS but values vary). xGMI 184 GB/s."
+    notes_en: "Hygon (海光) K100 AI — DCU series. 64 GB HBM, 896 GB/s bandwidth. FP16 192 TFLOPS (industry reports vary 100-256 TFLOPS depending on compute unit/mode). ROCm-compatible, can leverage AMD software ecosystem. Positioned against A800 for Chinese market. 350W TDP."
+    notes_zh: "海光 K100 AI — DCU 系列。64 GB HBM，896 GB/s 带宽。FP16 192 TFLOPS（公开资料数字因计算单元和精度模式不同有 100-256 TFLOPS 差异）。兼容 ROCm，可复用 AMD 软件生态。面向国产 A800 替代场景。350W TDP。"
+
+  - id: Hygon-Z100
+    aliases: [Z100, 海光Z100, DCU-Z100, 深算二号]
+    memory_gb: 32
+    nvlink_bandwidth_gbps: 184
+    fp16_tflops: 180
+    fp8_support: false
+    fp4_support: false
+    spec_source: "Hygon 海光 DCU Z100 (深算二号) — 32 GB HBM2, 1 TB/s bandwidth, 8192 compute cores, FP32 90 TFLOPS, FP16 ~180 TFLOPS (2x FP32), FP64 10.8 TFLOPS. xGMI 184 GB/s. Performance reported as 80-90% of A100. 350W TDP."
+    notes_en: "Hygon (海光) DCU Z100 / 深算二号. 32 GB HBM2, 1 TB/s bandwidth, 8192 compute units. FP16 180 TFLOPS, FP32 90 TFLOPS, FP64 10.8 TFLOPS. 350W. Performance cited at 80-90% of A100. ROCm stack, PCIe Gen4 + xGMI multi-card."
+    notes_zh: "海光 DCU Z100（深算二号）。32 GB HBM2，1 TB/s 带宽，8192 计算单元。FP16 180 TFLOPS，FP32 90 TFLOPS，FP64 10.8 TFLOPS。350W。综合性能约为 A100 的 80-90%。基于 ROCm 栈，PCIe Gen4 + xGMI 多卡互联。"
 
   - id: MTT-S4000
     aliases: [MooreThreads-S4000, 摩尔线程S4000, MTT-S4000-48G]
