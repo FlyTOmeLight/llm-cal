@@ -3,71 +3,92 @@
 [![CI](https://github.com/FlyTOmeLight/llm-cal/actions/workflows/ci.yml/badge.svg)](https://github.com/FlyTOmeLight/llm-cal/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/llm-cal.svg)](https://pypi.org/project/llm-cal/)
 [![Docs](https://img.shields.io/badge/docs-flytomelight.github.io-blue)](https://flytomelight.github.io/llm-cal/)
+[![License](https://img.shields.io/badge/license-Apache--2.0-green.svg)](LICENSE)
 
 **LLM inference hardware calculator** — architecture-aware, engine-version-aware, honest-labeled.
 
-Give it a HuggingFace / ModelScope model id and a GPU type, get back:
-- real weight size (read from `safetensors` metadata, not guessed)
-- architecture profile (MLA, NSA, CSA+HCA, MoE, sliding window — each treated as a first-class trait)
-- KV cache per request at multiple context lengths
-- recommended fleet size: `min` / `dev` / `prod` tiers with TP-aware KV sharding
-- engine compatibility from a curated matrix (vLLM & SGLang × 7 architecture families)
-- a ready-to-paste `vllm serve` or `sglang launch_server` command
+English · [中文](README.zh.md) · [Docs](https://flytomelight.github.io/llm-cal/) · [中文文档](https://flytomelight.github.io/llm-cal/zh/)
 
-Output is **bilingual** — English and 中文.
+Give it a HuggingFace / ModelScope model id and a GPU, get back:
+
+- **real weight size** (summed from `safetensors` API, not `params × precision`)
+- **architecture profile** — MHA / GQA / MQA / MLA / NSA / CSA+HCA, MoE active-expert ratio, sliding window, tied embeddings
+- **KV cache per request** at multiple context lengths, with TP-aware sharding
+- **fleet size** — `min` / `dev` / `prod` tiers that respect `num_heads` TP divisibility
+- **prefill latency + decode throughput** with named coefficients and citations
+- **K/L concurrency bounds** with bottleneck classification (memory vs compute vs bandwidth)
+- **engine compatibility** from a curated matrix (vLLM + SGLang × 16 model families × 32 entries)
+- a **ready-to-paste** `vllm serve` or `sglang launch_server` command
+
+Every number in the output carries a provenance label. `--explain` prints the full derivation trace. `--llm-review` (opt-in) sends the trace to any OpenAI-compatible endpoint for a second opinion.
 
 ---
 
 ## Why another calculator?
 
-Existing tools (`gpu_poor`, `llm-vram-calculator`, APXML, SelfHostLLM, ...) all compute weight size using `params × precision`. That silently fails on new architectures:
+Existing tools (`gpu_poor`, `llm-vram-calculator`, APXML, SelfHostLLM, ...) compute weight size with `params × precision`. That silently fails on mixed-precision quantization:
 
-| Model | `gpu_poor` says | Real `safetensors` | llm-cal |
-|---|---|---|---|
-| DeepSeek-V4-Flash (FP4+FP8 pack) | 284 GB (FP8 assumption) | **160 GB** | **160 GB** ✓ |
-| Standard FP8 models | correct | correct | correct ✓ |
+| Model | `gpu_poor` | Real `safetensors` | **llm-cal** |
+|---|---:|---:|---:|
+| DeepSeek-V4-Flash (FP4+FP8 pack) | 284 GB (FP8 assumed) | **160 GB** | **160 GB** ✓ |
+| DeepSeek-V3 (pure FP8) | 685 GB | **688 GB** | **688 GB** ✓ |
+| Qwen2.5-72B (FP16) | 140 GB | **145 GB** | **145 GB** ✓ |
 
-llm-cal reads the real file sizes from the HuggingFace API, then compares against every known quantization scheme — the best match wins. The DeepSeek-V4 story becomes explicit:
+llm-cal reads real bytes from the HF API, reconciles against every known quantization scheme, picks the best match, and **surfaces ties** when multiple schemes share the same bits/param:
 
 ```
-Quantization reconciliation (observed vs predicted per scheme)
-  scheme           predicted bytes    delta         error %
-  FP4_FP8_MIXED        160.01 GB     397 MB under   0.2%  ← wins
-  FP8                  290.94 GB     131 GB under   45.1% ← the gpu_poor trap
+Quantization reconciliation
+  FP4_FP8_MIXED    160.01 GB   0.2%  ← wins (tied with GPTQ_INT4, AWQ_INT4
+  GPTQ_INT4        160.01 GB   0.2%    at bpp=0.55 — need per-tensor dtype
+  AWQ_INT4         160.01 GB   0.2%    to distinguish, deferred to v0.2)
+  FP8              290.94 GB  45.1%  ← the gpu_poor trap
 ```
 
-And every number has a tag telling you where it came from:
+This tie was caught by `--llm-review` running MiniMax-M2 against the tool's own output during dogfood testing. First real bug from LLM review, fixed in v0.1.0.
 
-- `[verified]` — read directly from HF API / config.json
-- `[inferred]` — derived from `[verified]` in a single step
-- `[estimated]` — computed by a formula (KV cache, weight split)
-- `[cited]` — from release notes / PR / announcement
-- `[unverified]` — matrix entry without evidence (explicitly flagged)
-- `[unknown]` — failed to recognize, graceful degrade
+---
+
+## The honesty principle — 7 labels
+
+Every number carries one of these:
+
+| Label | Meaning | Example |
+|---|---|---|
+| `[verified]` | Direct read from API or file | `safetensors bytes: 159.62 GB` |
+| `[inferred]` | One-step derivation from verified data | `bits/param: 4.39` (bytes ÷ params) |
+| `[estimated]` | Formula-based, coefficient from source | `prefill latency: 735 ms` |
+| `[cited]` | From a paper / PR / release note | `vLLM ≥0.19.0 supports CSA+HCA` |
+| `[unverified]` | Matrix entry without evidence, flagged | `SGLang day-0 support pending` |
+| `[unknown]` | Graceful degrade — unknown model type | New `model_type` not in registry |
+| `[llm-opinion]` | **Opt-in** LLM audit, never overrides the 6 above | `--llm-review` output only |
+
+The first 6 labels are deterministic. `[llm-opinion]` is explicitly tagged as non-authoritative.
 
 ---
 
 ## Install
 
-Requires Python 3.11+.
+Python 3.11+.
 
 ```bash
 # pipx (cleanest)
-pipx install git+https://github.com/FlyTOmeLight/llm-cal.git
+pipx install git+https://github.com/FlyTOmeLight/llm-cal.git@v0.1.0
 
-# or uv
-uv tool install git+https://github.com/FlyTOmeLight/llm-cal.git
+# uv
+uv tool install git+https://github.com/FlyTOmeLight/llm-cal.git@v0.1.0
 
-# or pip
-pip install git+https://github.com/FlyTOmeLight/llm-cal.git
+# pip
+pip install git+https://github.com/FlyTOmeLight/llm-cal.git@v0.1.0
 ```
 
-Auth (for gated models like Llama, Gemma):
+Gated models (Llama, Gemma):
+
 ```bash
 export HF_TOKEN=hf_...
 ```
 
-Chinese mirror (if HF is slow in your region):
+Mainland China HF mirror:
+
 ```bash
 export HF_ENDPOINT=https://hf-mirror.com
 ```
@@ -77,179 +98,215 @@ export HF_ENDPOINT=https://hf-mirror.com
 ## Quickstart
 
 ```bash
-llm-cal deepseek-ai/DeepSeek-V4-Flash --gpu H800 --engine vllm
+# Basic evaluation
+llm-cal deepseek-ai/DeepSeek-V4-Flash --gpu H800
+
+# Chinese output + longer context
+llm-cal Qwen/Qwen2.5-72B-Instruct --gpu A100-80G --context-length 32768 --lang zh
+
+# Full derivation trace (every formula + input + step + source)
+llm-cal mistralai/Mixtral-8x7B-v0.1 --gpu H100 --explain
+
+# LLM audit of the derivation (opt-in, needs env vars)
+export LLM_CAL_REVIEWER_API_KEY=sk-...
+export LLM_CAL_REVIEWER_BASE_URL=https://api.deepseek.com/v1
+export LLM_CAL_REVIEWER_MODEL=deepseek-chat
+llm-cal deepseek-ai/DeepSeek-V3 --gpu H800 --explain --llm-review
+
+# All 53 supported GPUs
+llm-cal --list-gpus
+
+# Run the curated benchmark (8 models × 33 checks vs reference truth)
+llm-cal --benchmark
 ```
 
-Abbreviated output (real terminal is color-tagged):
+Abbreviated output:
 
 ```
 ┌─ deepseek-ai/DeepSeek-V4-Flash  via huggingface @ 6c858e7 ─┐
 
 Architecture
   model_type         deepseek_v4                             [verified]
-  family             transformer                             [verified]
-  layers             43                                      [verified]
   attention          CSA_HCA (heads=64, kv_heads=1, hd=512)  [verified]
-  compress_ratios    len=44, dense_layers=3                  [verified]
   moe                256 routed + 1 shared, top-6            [verified]
   sliding_window     128                                     [verified]
 
 Weights
-  safetensors bytes     159.62 GB      [verified]
-  total params          290.94B        [estimated]
-  bits/param            4.39           [inferred]
-  quantization guess    FP4_FP8_MIXED  [inferred]
+  safetensors bytes  159.62 GB      [verified]
+  quantization       FP4_FP8_MIXED  [inferred]  (tied with GPTQ_INT4, AWQ_INT4)
 
-KV cache per request (BF16)
-  4,096 tokens    68.91 MB      [estimated]
-  131,072         2.21 GB       [estimated]
-  1,048,576       17.64 GB      [estimated]
+Fleet — H800
+  tier       GPUs    concurrent @ 128K    concurrent @ 1.0M
+  min          4           ~14                  ~1
+  dev ★        4           ~14                  ~1
+  prod         8           ~23                  ~2
 
-Engine compatibility — vllm
-  version           >=0.19.0                       [cited]
-  optional flags    --attention-backend auto
-  sources           release notes + day-0 announcement 2026-04-23
+Performance — dev tier (4× H800)
+  prefill latency   735 ms @ 2000 input tokens     [estimated, Kaplan 2020]
+  decode throughput 48 tok/s per user              [estimated, Kwon SOSP 2023]
+  bottleneck        memory bandwidth               [inferred]
 
-Target hardware — H800
-  memory              80 GB HBM
-  NVLink bandwidth    400 GB/s (half of H100 — China-regulated variant)
-
-Recommended fleet — H800
-  tier       GPUs    weight/GPU    headroom/GPU    concurrent @ 128K    concurrent @ 1.0M
-  min          4      39.90 GB      32.10 GB               ~14                  ~1
-  dev ★        4      39.90 GB      32.10 GB               ~14                  ~1
-  prod         8      19.95 GB      52.05 GB               ~23                  ~2
-  constraint: TP must divide num_heads=64. Candidates within one node: [1, 2, 4, 8].
-  ★ = recommended
-
-┌─ Generated command — tier: dev (4 GPUs) ─┐
+Generated command
   vllm serve deepseek-ai/DeepSeek-V4-Flash \
-    --tensor-parallel-size 4 \
-    --max-model-len 1048576 \
-    --trust-remote-code \
-    --gpu-memory-utilization 0.9 \
+    --tensor-parallel-size 4 --max-model-len 1048576 \
+    --trust-remote-code --gpu-memory-utilization 0.9 \
     --attention-backend auto
 ```
-
-**中文输出**：加 `--lang zh`，或设 `LANG=zh_CN.UTF-8` 自动识别。
 
 ---
 
 ## CLI reference
 
 ```
-llm-cal MODEL_ID [OPTIONS]
+llm-cal [MODEL_ID] [OPTIONS]
 
-Required:
-  --gpu TEXT                GPU type: H100 / H800 / H200 / A100-80G / A100-40G /
-                            B200 / 910B / RTX4090 (case-insensitive, aliases accepted)
+Core:
+  --gpu TEXT                     GPU id (see --list-gpus). Aliases accepted, case-insensitive.
+  --engine [vllm|sglang]         Default: vllm
+  --gpu-count INT                Force fleet size (skips min/dev/prod auto-pick)
+  --context-length INT           Context length for KV cache estimation
+  --lang [en|zh]                 Output language (default: auto-detect from LANG)
 
-Optional:
-  --engine [vllm|sglang]    Default: vllm
-  --gpu-count INT           Force a specific fleet size (skips min/dev/prod tiers)
-  --context-length INT      Override default context for KV cache estimation
-  --refresh                 Bypass cache and re-fetch from HF/ModelScope
-  --lang [en|zh]            Output language (default: auto from LANG env)
+Performance tuning (all have honest defaults — see docs/methodology.md):
+  --input-tokens INT             Prefill input budget. Default: 2000
+  --output-tokens INT            Decode output budget. Default: 512
+  --target-tokens-per-sec FLOAT  SLA for per-user decode. Default: 30
+  --prefill-util FLOAT           Compute utilization factor. Default: 0.40
+  --decode-bw-util FLOAT         Memory-BW utilization factor. Default: 0.50
+  --concurrency-degradation FLOAT  High-load efficiency loss. Default: 1.0 (honest baseline)
+
+Introspection:
+  --explain                      Print full derivation trace for every non-trivial number
+  --llm-review                   Send derivation to LLM for second opinion (opt-in)
+                                 Requires: LLM_CAL_REVIEWER_API_KEY / _BASE_URL / _MODEL
+
+Meta:
+  --list-gpus                    List all 53 supported GPUs and exit
+  --benchmark                    Run the curated dataset (8 models × 33 checks)
+  --refresh                      Bypass cache, re-fetch from HF/ModelScope
 ```
 
 ---
 
-## Supported GPUs
+## Supported hardware (53 GPUs)
 
-| ID | Aliases | HBM | NVLink | FP16 TFLOPS | FP8 | FP4 |
-|---|---|---:|---:|---:|:-:|:-:|
-| H100 | H100-SXM5, H100-80G | 80 GB | 900 GB/s | 989 | ✓ | — |
-| H800 | H800-SXM5, H800-80G | 80 GB | 400 GB/s | 989 | ✓ | — |
-| H200 | H200-SXM, H200-141G | 141 GB | 900 GB/s | 989 | ✓ | — |
-| A100-80G | A100-80 | 80 GB | 600 GB/s | 312 | — | — |
-| A100-40G | A100-40 | 40 GB | 600 GB/s | 312 | — | — |
-| B200 | B200-192G | 192 GB | 1800 GB/s | 2250 | ✓ | **✓** |
-| 910B | Ascend-910B, 910B2 | 64 GB | 400 GB/s (HCCS) | 376 | — | — |
-| RTX4090 | 4090 | 24 GB | 0 (PCIe) | 165 | ✓ | — |
+| Vendor | Models |
+|---|---|
+| **NVIDIA** | B200, GB200, H100, H800, H200, H20, GH200, L40S, L40, L4, RTX6000-Ada, RTX4090, A100-80G/40G, A40, A10, A10G, V100-SXM2/PCIe-32G, T4 |
+| **AMD** | MI325X, MI300X, MI250X, MI210 |
+| **Intel Habana** | Gaudi3, Gaudi2 |
+| **华为昇腾** | 910A, 910B1, 910B2, 910B3, 910B4, 910C, Atlas-300I-Duo |
+| **沐曦** | MXC500, MXC550 |
+| **昆仑芯** | Kunlun-P800, Kunlun-R200 |
+| **壁仞** | BR100, BR104 |
+| **天数智芯** | BI-V100 |
+| **摩尔线程** | MTT-S4000, MTT-S3000, MR-V100 |
+| **寒武纪** | MLU370-X8, MLU590 |
+| **海光** | K100-AI, Z100 |
 
-Missing a GPU? Open a PR against `src/llm_cal/hardware/gpu_database.yaml` — no code changes needed.
+Each entry carries `spec_source` (vendor page, datasheet, or verified benchmark URL) and bilingual notes.
 
----
-
-## Supported engines + architectures (matrix)
-
-Current engine compatibility matrix (v0.1) covers 7 model-type families across vLLM 0.6–0.19 and SGLang 0.4–0.5:
-
-| Model family | vLLM | SGLang |
-|---|:-:|:-:|
-| `llama` | ✓ (≥0.6.0) | ✓ (≥0.4.0) |
-| `mistral` | ✓ (≥0.6.0) | — |
-| `mixtral` | ✓ (≥0.6.0) | ✓ (≥0.4.0) |
-| `qwen3` / `qwen3_moe` | ✓ (≥0.7.0) | ✓ (≥0.4.0) |
-| `deepseek_v3` | ✓ (≥0.7.0) | ✓ (≥0.4.0) |
-| `deepseek_v3_2` | ✓ (≥0.18.0, needs `--attention-backend nsa`) | ✓ (≥0.5.0) |
-| `deepseek_v4` | ✓ (≥0.19.0, day-0 2026-04-23) | ⚠ unverified |
-
-Every matrix entry carries a `verification_level` and a `sources[]` array. v0.1 has **no `verified` entries** — the author has no test hardware. Community-contributed `tested` entries are planned for v0.2.
+Full details: `llm-cal --list-gpus`. Missing one? PR `src/llm_cal/hardware/gpu_database.yaml` — data-only change, no code.
 
 ---
 
-## Benchmark: 4 reference models
+## Engine × architecture matrix (32 entries / 16 families)
 
-All numbers are from real tool runs. Timestamps reflect the underlying HF commit.
+Covers vLLM 0.6–0.19 and SGLang 0.4–0.5:
 
-| Model | GPU | Weight ([verified]) | Quant ([inferred]) | Recommended (dev) | concurrent @ 128K |
-|---|---|---:|---|:-:|:-:|
-| `deepseek-ai/DeepSeek-V4-Flash` | H800 | 159.62 GB | FP4_FP8_MIXED | 4 GPUs | ~14 |
-| `deepseek-ai/DeepSeek-V3` | H800 | 688.59 GB | FP8 | 8 GPUs (tight) | (overflow — needs >8) |
-| `Qwen/Qwen2.5-72B-Instruct` | H100 | 145.41 GB | FP16 | 8 GPUs | ~40* (GQA TP-shard) |
-| `mistralai/Mixtral-8x7B-v0.1` | H100 | 93.41 GB | FP16 | 4 GPUs | ~45 |
+- Dense: `llama`, `mistral`, `qwen2`, `qwen3`, `phi`, `gemma`, `internlm`
+- MoE: `mixtral`, `qwen3_moe`, `deepseek_v3`, `deepseek_v3_2`, `deepseek_v4`, `phi_moe`
+- Sparse attention: `deepseek_v3_2` (NSA), `deepseek_v4` (CSA+HCA)
+- Sliding window: `mistral`, `qwen3_moe`
 
-*Qwen2.5-72B uses GQA (`kv_heads=8`). At TP=8, per-GPU KV is 1/8 of total — llm-cal applies this sharding automatically. Tools that assume KV replication (e.g. SelfHostLLM) would report ~5 concurrent here.
+Every matrix entry carries `verification_level` (`verified` / `cited` / `unverified`) and `sources[]` with URL + `captured_date`. v0.1 has no `verified` entries — the author has no test hardware. Community `tested` contributions welcome.
+
+Full matrix: [`src/llm_cal/engine_compat/matrix.yaml`](src/llm_cal/engine_compat/matrix.yaml).
 
 ---
 
-## Label discipline
+## Benchmark (8 models × 33 checks)
 
-Every number in the output has a provenance tag. This is the tool's value proposition — users know exactly what is measured vs computed.
+`llm-cal --benchmark` runs the curated dataset and compares tool output against reference truth (HF API sizes, model card claims, vLLM recipes).
 
-| Tag | Meaning | Example |
-|---|---|---|
-| `[verified]` | Direct read from API or file | `safetensors bytes: 159.62 GB` (sum of HF siblings) |
-| `[inferred]` | One-step derivation from verified data | `bits/param: 4.39` (bytes ÷ params) |
-| `[estimated]` | Formula-based computation | `KV cache @ 128K: 2.21 GB` |
-| `[cited]` | External source (release note / PR) | `vLLM ≥0.19.0 supports CSA+HCA` |
-| `[unverified]` | Matrix entry without evidence — flagged | `SGLang day-0 support pending` |
-| `[unknown]` | Couldn't identify, graceful degrade | New model type not in registry |
+| Model | Ref weight | llm-cal | Quant | Status |
+|---|---:|---:|---|:-:|
+| `deepseek-ai/DeepSeek-V4-Flash` | 160 GB | 159.62 GB | FP4_FP8_MIXED | ✓ |
+| `deepseek-ai/DeepSeek-V3` | 688 GB | 688.59 GB | FP8 | ✓ |
+| `deepseek-ai/DeepSeek-V3.2` | 688 GB | 687.84 GB | FP8 (NSA) | ✓ |
+| `Qwen/Qwen2.5-72B-Instruct` | 145 GB | 145.41 GB | FP16 | ✓ |
+| `Qwen/Qwen3-30B-A3B` | 61 GB | 60.82 GB | FP16 (MoE) | ✓ |
+| `Qwen/Qwen2.5-7B` | 14.2 GB | 14.19 GB | FP16 | ✓ |
+| `mistralai/Mixtral-8x7B-v0.1` | 93 GB | 93.41 GB | FP16 (MoE) | ✓ |
+| `microsoft/Phi-4` | 28 GB | 28.17 GB | FP16 | ✓ |
 
-See [`docs/architecture-guide.md`](docs/architecture-guide.md) for how the tool handles each.
+Exit code 0 on all-pass, 1 on any FAIL. Runnable in CI.
+
+---
+
+## Methodology
+
+Every formula and coefficient has a primary source. No magic numbers.
+
+- **Prefill FLOPs**: `2 × params × input_tokens` (Kaplan et al. 2020, *Scaling Laws for Neural Language Models*)
+- **Decode throughput**: `bandwidth × util / weight_bytes` (Kwon et al. SOSP 2023, *Efficient Memory Management for LLM Serving with PagedAttention*)
+- **KV cache layout**: matches vLLM `PagedAttention` and SGLang `RadixAttention` source behavior
+- **TP sharding**: `per_gpu_KV = total_KV / min(tp_size, num_kv_heads)` — empirically verified against vLLM runtime
+- **Utilization coefficients**: `prefill_util=0.40`, `decode_bw_util=0.50`, `concurrency_degradation=1.0` (honest defaults; override per-workload via CLI flags)
+
+Full writeup with citations: [`docs/methodology.md`](docs/methodology.md) · [中文](docs/zh/methodology.md).
+
+---
+
+## Documentation
+
+- [Homepage (English)](https://flytomelight.github.io/llm-cal/)
+- [Homepage (中文)](https://flytomelight.github.io/llm-cal/zh/)
+- [Architecture guide](https://flytomelight.github.io/llm-cal/architecture-guide/) — 10-step checklist for adding a new model type
+- [Methodology](https://flytomelight.github.io/llm-cal/methodology/) — every formula with source
+- [Contributing](CONTRIBUTING.md)
 
 ---
 
 ## Scope of v0.1
 
-**In scope:**
-- HuggingFace as the primary source (real bytes from `model_info().siblings`)
-- ModelScope support (pending ADR-001 — SDK vs REST decision)
-- Architecture detection: Dense / MoE / GQA / MQA / MLA / NSA / CSA+HCA / Sliding Window
-- KV cache formulas with traits composition (DeepSeek V4 error < 1% vs hand math)
-- TP-aware KV sharding (per vLLM/SGLang behavior)
-- Fleet planner: min/dev/prod tiers, TP divisibility constraint
-- Command generator: vLLM + SGLang, pulls required flags from compat matrix
+**Shipped:**
 
-**Out of scope (deferred):**
-- Ollama / GGUF — v0.2
-- Multimodal (Qwen-VL, InternVL) — v0.2
-- LoRA / adapter VRAM math — v0.2
-- Mamba / state-space models — v0.3+
-- Diagnostic mode (audit existing `vllm serve` command) — v0.3+
-- `--offline` mode for air-gapped environments — v0.2
-- Real-hardware-measured matrix entries — v0.2+ community PR channel
+- HuggingFace + ModelScope as model sources, real bytes from `safetensors` metadata
+- Architecture detection: Dense / MoE / GQA / MQA / MLA / NSA / CSA+HCA / Sliding Window
+- KV cache with traits composition, TP-aware sharding
+- Fleet planner (min/dev/prod, TP divisibility)
+- Prefill / decode performance estimator
+- K/L concurrency bounds + bottleneck classification
+- Engine compat matrix (vLLM + SGLang, 32 entries)
+- Command generator (vLLM + SGLang with required flags)
+- Bilingual output (en / zh) with label localization
+- `--explain` derivation trace
+- `--llm-review` opt-in LLM audit (any OpenAI-compatible endpoint)
+- `--benchmark` curated regression suite
+- `--list-gpus` discovery
+- 53-GPU database with `spec_source` traceability
+
+**v0.2 roadmap:**
+
+- Per-tensor dtype read from `safetensors` metadata (distinguishes FP4/GPTQ/AWQ tie)
+- Lazy matrix loading when entries > 100
+- Ollama / GGUF support
+- Multimodal models (Qwen-VL, InternVL)
+- LoRA / adapter VRAM math
+- `--offline` mode for air-gapped environments
+- Community-contributed `verified` matrix entries (requires real hardware runs)
 
 ---
 
 ## Contributing
 
-We especially welcome:
-1. **New GPUs** in `src/llm_cal/hardware/gpu_database.yaml` (data-only change)
-2. **New engine compat entries** in `src/llm_cal/engine_compat/matrix.yaml` with sources
-3. **New model architectures** — see [`docs/architecture-guide.md`](docs/architecture-guide.md) for the 10-step checklist
-4. **`verified` matrix entries** — if you have hardware and can actually run a config, PR the tested result
+Especially welcome:
+
+1. **New GPUs** — `src/llm_cal/hardware/gpu_database.yaml` (data only, no code)
+2. **New engine entries** — `src/llm_cal/engine_compat/matrix.yaml` with `sources[]`
+3. **New model architectures** — [10-step checklist](docs/architecture-guide.md)
+4. **`verified` matrix entries** — if you have real hardware and can run a config, send us the tested result
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for dev setup.
 
