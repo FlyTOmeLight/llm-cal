@@ -1,0 +1,77 @@
+# GPU database — v0.1 initial set.
+# Values are from public vendor spec sheets. `notes` is bilingual to help
+# readers understand non-obvious constraints (e.g. why H800 is slower than H100).
+schema_version: 1
+gpus:
+  - id: H100
+    aliases: [H100-SXM5, H100-80G, H100-SXM]
+    memory_gb: 80
+    nvlink_bandwidth_gbps: 900
+    fp16_tflops: 989
+    fp8_support: true
+    fp4_support: false
+    notes_en: "Hopper flagship. Full NVLink."
+    notes_zh: "Hopper 架构旗舰，完整 NVLink 带宽。"
+  - id: H800
+    aliases: [H800-SXM5, H800-80G]
+    memory_gb: 80
+    nvlink_bandwidth_gbps: 400
+    fp16_tflops: 989
+    fp8_support: true
+    fp4_support: false
+    notes_en: "China-regulated H100 variant. NVLink bandwidth halved (400 vs 900). Same HBM and compute as H100."
+    notes_zh: "H100 的中国合规版本。NVLink 带宽减半（400 vs 900 GB/s），HBM 容量和算力与 H100 相同。"
+  - id: H200
+    aliases: [H200-SXM, H200-141G]
+    memory_gb: 141
+    nvlink_bandwidth_gbps: 900
+    fp16_tflops: 989
+    fp8_support: true
+    fp4_support: false
+    notes_en: "Hopper with HBM3e. 141 GB per GPU."
+    notes_zh: "搭载 HBM3e 的 Hopper，单卡 141 GB。"
+  - id: A100-80G
+    aliases: [A100-80, A100-SXM-80G]
+    memory_gb: 80
+    nvlink_bandwidth_gbps: 600
+    fp16_tflops: 312
+    fp8_support: false
+    fp4_support: false
+    notes_en: "Ampere. No native FP8. Still widely deployed."
+    notes_zh: "Ampere 架构。不原生支持 FP8，但部署量仍然非常大。"
+  - id: A100-40G
+    aliases: [A100-40, A100-SXM-40G]
+    memory_gb: 40
+    nvlink_bandwidth_gbps: 600
+    fp16_tflops: 312
+    fp8_support: false
+    fp4_support: false
+    notes_en: "Ampere 40 GB variant. Smaller HBM limits large-model single-node deployments."
+    notes_zh: "Ampere 的 40 GB 版本，显存较小，大模型单机部署受限。"
+  - id: B200
+    aliases: [B200-SXM, B200-192G]
+    memory_gb: 192
+    nvlink_bandwidth_gbps: 1800
+    fp16_tflops: 2250
+    fp8_support: true
+    fp4_support: true
+    notes_en: "Blackwell flagship. Native FP4 Tensor Cores. First GPU that accelerates DeepSeek-V4-Flash-style FP4 at hardware level."
+    notes_zh: "Blackwell 旗舰。原生 FP4 Tensor Core，首款在硬件层加速 DeepSeek-V4-Flash 类 FP4 模型的 GPU。"
+  - id: "910B"
+    aliases: [Ascend-910B, "910B2", "910B3"]
+    memory_gb: 64
+    nvlink_bandwidth_gbps: 400  # HCCS equivalent
+    fp16_tflops: 376
+    fp8_support: false
+    fp4_support: false
+    notes_en: "Huawei Ascend. HCCS interconnect instead of NVLink."
+    notes_zh: "华为昇腾，使用 HCCS 替代 NVLink。部分推理引擎需走 MindIE / CANN 路径，vLLM/SGLang 支持需看具体版本。"
+  - id: RTX4090
+    aliases: ["4090", RTX-4090]
+    memory_gb: 24
+    nvlink_bandwidth_gbps: 0  # No NVLink on consumer Ada
+    fp16_tflops: 165
+    fp8_support: true
+    fp4_support: false
+    notes_en: "Consumer Ada. No NVLink. Large models need multi-GPU via PCIe (slower)."
+    notes_zh: "消费级 Ada 架构，无 NVLink。大模型多卡只能走 PCIe（明显更慢）。"

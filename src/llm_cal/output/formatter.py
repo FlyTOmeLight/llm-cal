@@ -1,8 +1,7 @@
-"""Rich-formatted output for EvaluationReport.
+"""Rich-formatted, fully i18n'd output for EvaluationReport.
 
-This is a partial implementation — focuses on the label-discipline story and
-model/weight/KV-cache reporting. Fleet planner and generated-command blocks are
-Week 5.
+Every visible string flows through `common.i18n.t()`. To add another locale,
+add entries to `_MESSAGES` in i18n.py; no changes here needed.
 """
 
 from __future__ import annotations
@@ -14,7 +13,9 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from llm_cal.common.i18n import get_locale, t
 from llm_cal.core.evaluator import EvaluationReport
+from llm_cal.engine_compat.loader import EngineCompatEntry, EngineFlag, EngineSource
 from llm_cal.output.labels import AnnotatedValue, Label
 
 _LABEL_STYLES: dict[Label, str] = {
@@ -54,11 +55,11 @@ def render(report: EvaluationReport, console: Console | None = None) -> None:
     console = console or Console()
 
     console.print()
+    sha_frag = f" @ {report.commit_sha[:7]}" if report.commit_sha else ""
     console.print(
         Panel.fit(
             f"[bold cyan]{report.model_id}[/bold cyan]  "
-            f"[dim]via {report.source}"
-            f"{' @ ' + report.commit_sha[:7] if report.commit_sha else ''}[/dim]",
+            f"[dim]{t('panel.via')} {report.source}{sha_frag}[/dim]",
             border_style="cyan",
         )
     )
@@ -66,58 +67,66 @@ def render(report: EvaluationReport, console: Console | None = None) -> None:
     _render_architecture(report, console)
     _render_weight(report, console)
     _render_kv_cache(report, console)
+    _render_engine_compat(report, console)
+    _render_hardware(report, console)
     _render_label_legend(console)
 
 
 def _render_architecture(report: EvaluationReport, console: Console) -> None:
     p = report.profile
-    table = Table(title="Architecture", show_header=False, box=None, padding=(0, 2))
+    table = Table(title=t("section.architecture"), show_header=False, box=None, padding=(0, 2))
     table.add_column("field", style="dim")
     table.add_column("value")
     table.add_column("label")
 
+    table.add_row(t("arch.model_type"), p.model_type or t("arch.none"), _verified_tag())
+    table.add_row(t("arch.family"), p.family.value, _verified_tag())
     table.add_row(
-        "model_type",
-        p.model_type or "(none)",
-        _verified_tag("config.json"),
+        t("arch.confidence"), p.confidence.value, Text(f"[{p.confidence.value}]", style="magenta")
     )
-    table.add_row(
-        "family",
-        p.family.value,
-        _verified_tag("config.json"),
-    )
-    table.add_row(
-        "confidence",
-        p.confidence.value,
-        Text(f"[{p.confidence.value}]", style="magenta"),
-    )
-    table.add_row("layers", str(p.num_hidden_layers), _verified_tag())
-    table.add_row("hidden_size", str(p.hidden_size), _verified_tag())
-    table.add_row("vocab_size", f"{p.vocab_size:,}", _verified_tag())
+    table.add_row(t("arch.layers"), str(p.num_hidden_layers), _verified_tag())
+    table.add_row(t("arch.hidden_size"), str(p.hidden_size), _verified_tag())
+    table.add_row(t("arch.vocab_size"), f"{p.vocab_size:,}", _verified_tag())
+
     if p.attention is not None:
         table.add_row(
-            "attention",
-            f"{p.attention.variant} "
-            f"(heads={p.attention.num_heads}, kv_heads={p.attention.num_kv_heads}, "
-            f"head_dim={p.attention.head_dim})",
+            t("arch.attention"),
+            t(
+                "arch.attn_summary",
+                variant=p.attention.variant,
+                heads=p.attention.num_heads,
+                kv_heads=p.attention.num_kv_heads,
+                head_dim=p.attention.head_dim,
+            ),
             _verified_tag(),
         )
         if p.attention.compress_ratios:
             ratios = p.attention.compress_ratios
-            summary = f"len={len(ratios)}, dense_layers={sum(1 for r in ratios if r == 0)}"
-            table.add_row("compress_ratios", summary, _verified_tag())
+            table.add_row(
+                t("arch.compress_ratios"),
+                t(
+                    "arch.compress_ratios_summary",
+                    n=len(ratios),
+                    dense=sum(1 for r in ratios if r == 0),
+                ),
+                _verified_tag(),
+            )
     if p.moe is not None:
         table.add_row(
-            "moe",
-            f"{p.moe.num_routed_experts} routed + {p.moe.num_shared_experts} shared, "
-            f"top-{p.moe.num_experts_per_tok}",
+            t("arch.moe"),
+            t(
+                "arch.moe_summary",
+                routed=p.moe.num_routed_experts,
+                shared=p.moe.num_shared_experts,
+                topk=p.moe.num_experts_per_tok,
+            ),
             _verified_tag(),
         )
     if p.sliding_window:
-        table.add_row("sliding_window", str(p.sliding_window), _verified_tag())
+        table.add_row(t("arch.sliding_window"), str(p.sliding_window), _verified_tag())
     if p.position and p.position.max_position_embeddings:
         table.add_row(
-            "max_position_embeddings",
+            t("arch.max_position"),
             f"{p.position.max_position_embeddings:,}",
             _verified_tag(),
         )
@@ -126,98 +135,193 @@ def _render_architecture(report: EvaluationReport, console: Console) -> None:
     if p.auxiliary.get("warning"):
         console.print(f"[red]⚠ {p.auxiliary['warning']}[/red]")
     if p.auxiliary.get("v0_1_unsupported"):
-        console.print(
-            "[yellow]⚠ State-space models are not supported in v0.1 (planned for v0.3+).[/yellow]"
-        )
+        console.print(f"[yellow]⚠ {t('arch.unsupported_state_space')}[/yellow]")
 
 
 def _render_weight(report: EvaluationReport, console: Console) -> None:
-    table = Table(title="Weights", show_header=False, box=None, padding=(0, 2))
+    table = Table(title=t("section.weights"), show_header=False, box=None, padding=(0, 2))
     table.add_column("field", style="dim")
     table.add_column("value")
     table.add_column("label")
 
     w = report.weight
     table.add_row(
-        "safetensors bytes",
+        t("weights.safetensors_bytes"),
         _fmt_bytes(w.total_bytes.value),
         format_tag(w.total_bytes),
     )
     table.add_row(
-        "estimated total params",
+        t("weights.params_estimated"),
         _fmt_params(report.total_params_estimate.value),
         format_tag(report.total_params_estimate),
     )
     if w.bits_per_param is not None:
         table.add_row(
-            "bits/param",
+            t("weights.bits_per_param"),
             f"{w.bits_per_param.value:.2f}",
             format_tag(w.bits_per_param),
         )
     table.add_row(
-        "quantization guess",
+        t("weights.quant_guess"),
         str(w.quantization_guess.value),
         format_tag(w.quantization_guess),
     )
     console.print(table)
 
-    # The reconciliation sidelight — DeepSeek-V4-Flash story lives here
     r = report.reconciliation
     if r.candidates:
         rec_table = Table(
-            title="Quantization reconciliation (observed vs predicted per scheme)",
+            title=t("section.reconciliation"),
             title_justify="left",
             show_header=True,
             header_style="dim",
             box=None,
             padding=(0, 2),
         )
-        rec_table.add_column("scheme")
-        rec_table.add_column("predicted bytes", justify="right")
-        rec_table.add_column("delta", justify="right")
-        rec_table.add_column("error %", justify="right")
+        rec_table.add_column(t("recon.scheme"))
+        rec_table.add_column(t("recon.predicted"), justify="right")
+        rec_table.add_column(t("recon.delta"), justify="right")
+        rec_table.add_column(t("recon.error_pct"), justify="right")
         for c in r.candidates[:6]:
+            direction = t("recon.over") if c.delta_bytes > 0 else t("recon.under")
             rec_table.add_row(
                 c.scheme,
                 _fmt_bytes(c.predicted_bytes),
-                _fmt_bytes(abs(c.delta_bytes)) + (" over" if c.delta_bytes > 0 else " under"),
+                f"{_fmt_bytes(abs(c.delta_bytes))} {direction}",
                 f"{c.relative_error * 100:.1f}%",
             )
         console.print(rec_table)
-        console.print(f"[bold]best match:[/bold] {r.best.value}  {format_tag(r.best)}")
+        console.print(f"[bold]{t('recon.best')}[/bold] {r.best.value}  {format_tag(r.best)}")
 
 
 def _render_kv_cache(report: EvaluationReport, console: Console) -> None:
     if not report.kv_cache_by_context:
         return
     table = Table(
-        title="KV cache per request (BF16/FP16)",
+        title=t("section.kv_cache"),
         title_justify="left",
         show_header=True,
         header_style="dim",
         box=None,
         padding=(0, 2),
     )
-    table.add_column("context")
-    table.add_column("KV cache", justify="right")
-    table.add_column("label")
+    table.add_column(t("kv.context"))
+    table.add_column(t("kv.kv_cache"), justify="right")
+    table.add_column(t("kv.label"))
+    tokens_word = t("kv.tokens")
     for ctx, av in report.kv_cache_by_context.items():
         table.add_row(
-            f"{ctx:,} tokens",
+            f"{ctx:,} {tokens_word}",
             _fmt_bytes(av.value),
             format_tag(av),
         )
     console.print(table)
 
 
+def _render_engine_compat(report: EvaluationReport, console: Console) -> None:
+    m = report.engine_match
+    if m is None:
+        console.print()
+        console.print(
+            f"[dim]{t('section.engine_compat')}:[/dim] [yellow]{t('engine.no_match')}[/yellow]"
+        )
+        return
+
+    table = Table(
+        title=f"{t('section.engine_compat')} — {m.engine}",
+        show_header=False,
+        box=None,
+        padding=(0, 2),
+    )
+    table.add_column("field", style="dim")
+    table.add_column("value")
+    table.add_column("label")
+
+    verif_label = _verif_label(m)
+    table.add_row(t("engine.version_spec"), m.version_spec, Text(""))
+    table.add_row(t("engine.support"), m.support, verif_label)
+    table.add_row(t("engine.verification"), m.verification_level, verif_label)
+
+    if m.required_flags:
+        lines = [_fmt_flag(f) for f in m.required_flags]
+        table.add_row(t("engine.required_flags"), "\n".join(lines), Text(""))
+    if m.optional_flags:
+        lines = [_fmt_flag(f) for f in m.optional_flags]
+        table.add_row(t("engine.optional_flags"), "\n".join(lines), Text(""))
+
+    caveats = m.caveats_zh if get_locale() == "zh" else m.caveats_en
+    if caveats:
+        table.add_row(t("engine.caveats"), "\n".join(f"• {c}" for c in caveats), Text(""))
+
+    if m.sources:
+        source_lines = [_fmt_source(s) for s in m.sources]
+        table.add_row(t("engine.sources"), "\n".join(source_lines), Text(""))
+
+    console.print(table)
+
+
+def _render_hardware(report: EvaluationReport, console: Console) -> None:
+    console.print()
+    if report.gpu_spec is None:
+        msg = report.gpu_error or f"Unknown GPU '{report.gpu}'"
+        console.print(f"[bold red]{t('section.hardware')}:[/bold red] [red]{msg}[/red]")
+        return
+
+    spec = report.gpu_spec
+    locale = get_locale()
+    table = Table(
+        title=f"{t('section.hardware')} — {spec.id}",
+        show_header=False,
+        box=None,
+        padding=(0, 2),
+    )
+    table.add_column("field", style="dim")
+    table.add_column("value")
+
+    table.add_row(t("hw.memory"), f"{spec.memory_gb} GB HBM")
+    table.add_row(t("hw.nvlink_bandwidth"), f"{spec.nvlink_bandwidth_gbps} GB/s")
+    table.add_row(t("hw.fp16_tflops"), f"{spec.fp16_tflops:.0f} TFLOPS")
+    table.add_row(t("hw.fp8_support"), t("hw.bool_yes") if spec.fp8_support else t("hw.bool_no"))
+    table.add_row(t("hw.fp4_support"), t("hw.bool_yes") if spec.fp4_support else t("hw.bool_no"))
+    notes = spec.localized_notes(locale)
+    if notes:
+        table.add_row(t("hw.notes"), notes)
+    console.print(table)
+
+
 def _render_label_legend(console: Console) -> None:
     legend = Text()
-    legend.append("labels: ", style="dim")
+    legend.append(f"{t('section.labels')} ", style="dim")
     for label in Label:
-        tag = f"[{label.value}] "
-        legend.append(tag, style=_LABEL_STYLES.get(label, "white"))
+        legend.append(f"[{label.value}] ", style=_LABEL_STYLES.get(label, "white"))
     console.print(legend)
 
 
-def _verified_tag(_source: str | None = None) -> Text:
+def _verified_tag() -> Text:
     return Text(f"[{Label.VERIFIED.value}]", style=_LABEL_STYLES[Label.VERIFIED])
+
+
+def _verif_label(entry: EngineCompatEntry) -> Text:
+    """Engine compat rows use the same label vocabulary as AnnotatedValue."""
+    label = {
+        "verified": Label.VERIFIED,
+        "cited": Label.CITED,
+        "unverified": Label.UNVERIFIED,
+    }.get(entry.verification_level, Label.UNKNOWN)
+    return Text(f"[{label.value}]", style=_LABEL_STYLES.get(label, "white"))
+
+
+def _fmt_flag(f: EngineFlag) -> str:
+    if f.value is None:
+        return f.flag
+    return f"{f.flag} {f.value}"
+
+
+def _fmt_source(s: EngineSource) -> str:
+    label = t(f"source.{s.type}")
+    if s.type == "tested":
+        return f"[{label}] {s.tester} @ {s.hardware} ({s.date})"
+    if s.url:
+        captured = f" ({t('source.captured_on')} {s.captured_date})" if s.captured_date else ""
+        return f"[{label}] {s.url}{captured}"
+    return f"[{label}]"

@@ -66,6 +66,10 @@ source = "vcs"
 [tool.hatch.build.targets.wheel]
 packages = ["src/llm_cal"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"src/llm_cal/engine_compat/matrix.yaml" = "llm_cal/engine_compat/matrix.yaml"
+"src/llm_cal/hardware/gpu_database.yaml" = "llm_cal/hardware/gpu_database.yaml"
+
 [tool.hatch.build.targets.sdist]
 include = [
   "src/llm_cal",
@@ -97,6 +101,9 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["B", "N"]
+# i18n module intentionally uses full-width Chinese punctuation.
+"src/llm_cal/common/i18n.py" = ["RUF001", "RUF002", "RUF003"]
+"tests/test_i18n.py" = ["B", "N", "RUF001", "RUF002", "RUF003"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

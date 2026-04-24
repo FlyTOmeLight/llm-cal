@@ -1,0 +1,244 @@
+# Engine compatibility matrix — v0.1 initial entries.
+#
+# VERIFICATION LEVELS:
+#   verified   = actually tested by someone with hardware (requires type=tested source)
+#                  >>> v0.1 has ZERO `verified` entries — author has no test hardware <<<
+#   cited      = evidence exists (release note / PR / announcement) but not tested by us
+#   unverified = no sources, just an educated guess
+#
+# The tool ALWAYS surfaces verification_level in output. Users never see a green
+# checkmark on an unverified row.
+schema_version: 2
+entries:
+  # ============================================================
+  # vLLM
+  # ============================================================
+  - engine: vllm
+    version_spec: ">=0.19.0"
+    matches_model_type: deepseek_v4
+    support: full
+    verification_level: cited
+    required_flags: []
+    optional_flags:
+      - flag: "--attention-backend"
+        value: "auto"
+        note_en: "Picks CSA+HCA backend automatically."
+        note_zh: "自动选择 CSA+HCA 注意力后端。"
+    sources:
+      - type: release_notes
+        url: "https://github.com/vllm-project/vllm/releases/tag/v0.19.0"
+        captured_date: "2026-04-23"
+      - type: announcement
+        url: "https://x.com/vllm_project/status/2047520252851105796"
+        captured_date: "2026-04-23"
+        note_en: "Day-0 support announcement."
+        note_zh: "Day-0 支持公告。"
+    caveats_en:
+      - "H800 MoE all-to-all is bottlenecked by halved NVLink; throughput lower than H100."
+      - "1M context requires --max-model-len 1048576 + --gpu-memory-utilization 0.9."
+    caveats_zh:
+      - "H800 的 MoE all-to-all 受限于减半的 NVLink，吞吐明显低于 H100。"
+      - "1M 上下文需要 --max-model-len 1048576 + --gpu-memory-utilization 0.9。"
+
+  - engine: vllm
+    version_spec: ">=0.18.0,<0.19.0"
+    matches_model_type: deepseek_v3_2
+    support: full
+    verification_level: cited
+    required_flags:
+      - flag: "--attention-backend"
+        value: "nsa"
+    optional_flags: []
+    sources:
+      - type: release_notes
+        url: "https://docs.vllm.ai/projects/recipes/en/latest/DeepSeek/DeepSeek-V3_2.html"
+        captured_date: "2026-04-24"
+    caveats_en:
+      - "TP=8 padding overhead: 128 attention heads / 8 = 16 per rank but padded to 64."
+    caveats_zh:
+      - "TP=8 存在 padding 开销：128 个头 / 8 = 16 头/rank，但填充到 64。建议 TP=2 + DP/EP。"
+
+  - engine: vllm
+    version_spec: ">=0.7.0"
+    matches_model_type: deepseek_v3
+    support: full
+    verification_level: cited
+    required_flags: []
+    optional_flags:
+      - flag: "--trust-remote-code"
+        value: null
+        note_en: "Required for custom DeepSeek modeling code."
+        note_zh: "用于加载 DeepSeek 的自定义建模代码。"
+    sources:
+      - type: release_notes
+        url: "https://docs.vllm.ai/projects/recipes/en/latest/DeepSeek/DeepSeek-V3.html"
+        captured_date: "2026-04-24"
+    caveats_en: []
+    caveats_zh: []
+
+  - engine: vllm
+    version_spec: ">=0.6.0"
+    matches_model_type: llama
+    support: full
+    verification_level: cited
+    required_flags: []
+    optional_flags: []
+    sources:
+      - type: release_notes
+        url: "https://docs.vllm.ai/"
+        captured_date: "2026-04-24"
+    caveats_en: []
+    caveats_zh: []
+
+  - engine: vllm
+    version_spec: ">=0.7.0"
+    matches_model_type: qwen3
+    support: full
+    verification_level: cited
+    required_flags: []
+    optional_flags: []
+    sources:
+      - type: release_notes
+        url: "https://docs.vllm.ai/"
+        captured_date: "2026-04-24"
+    caveats_en: []
+    caveats_zh: []
+
+  - engine: vllm
+    version_spec: ">=0.7.0"
+    matches_model_type: qwen3_moe
+    support: full
+    verification_level: cited
+    required_flags: []
+    optional_flags:
+      - flag: "--enable-expert-parallel"
+        value: null
+        note_en: "Enables DP+EP for MoE all-to-all distribution."
+        note_zh: "启用 DP+EP，对 MoE all-to-all 通信更友好。"
+    sources:
+      - type: release_notes
+        url: "https://docs.vllm.ai/en/latest/serving/expert_parallel_deployment/"
+        captured_date: "2026-04-24"
+    caveats_en: []
+    caveats_zh: []
+
+  - engine: vllm
+    version_spec: ">=0.6.0"
+    matches_model_type: mixtral
+    support: full
+    verification_level: cited
+    required_flags: []
+    optional_flags: []
+    sources:
+      - type: release_notes
+        url: "https://docs.vllm.ai/"
+        captured_date: "2026-04-24"
+    caveats_en: []
+    caveats_zh: []
+
+  - engine: vllm
+    version_spec: ">=0.6.0"
+    matches_model_type: mistral
+    support: full
+    verification_level: cited
+    required_flags: []
+    optional_flags: []
+    sources:
+      - type: release_notes
+        url: "https://docs.vllm.ai/"
+        captured_date: "2026-04-24"
+    caveats_en: []
+    caveats_zh: []
+
+  # ============================================================
+  # SGLang
+  # ============================================================
+  - engine: sglang
+    version_spec: ">=0.5.0"
+    matches_model_type: deepseek_v3_2
+    support: full
+    verification_level: cited
+    required_flags:
+      - flag: "--attention-backend"
+        value: "nsa"
+    optional_flags: []
+    sources:
+      - type: release_notes
+        url: "https://docs.sglang.io/advanced_features/attention_backend.html"
+        captured_date: "2026-04-24"
+      - type: announcement
+        url: "https://www.lmsys.org/blog/2025-09-29-deepseek-V32/"
+        captured_date: "2025-09-29"
+        note_en: "Day-0 V3.2 support announcement."
+        note_zh: "V3.2 的 Day-0 支持公告。"
+    caveats_en: []
+    caveats_zh: []
+
+  - engine: sglang
+    version_spec: ">=0.5.0"
+    matches_model_type: deepseek_v4
+    support: unverified
+    verification_level: unverified
+    required_flags: []
+    optional_flags: []
+    sources: []
+    caveats_en:
+      - "As of 2026-04-24, no Day-0 announcement for V4. DSA/NSA infrastructure exists (V3.2), expected to extend."
+    caveats_zh:
+      - "截至 2026-04-24，尚无 V4 的 Day-0 公告。已有 V3.2 的 DSA/NSA 基础设施，预期会扩展支持。"
+
+  - engine: sglang
+    version_spec: ">=0.4.0"
+    matches_model_type: deepseek_v3
+    support: full
+    verification_level: cited
+    required_flags: []
+    optional_flags: []
+    sources:
+      - type: release_notes
+        url: "https://github.com/sgl-project/sglang"
+        captured_date: "2026-04-24"
+    caveats_en: []
+    caveats_zh: []
+
+  - engine: sglang
+    version_spec: ">=0.4.0"
+    matches_model_type: llama
+    support: full
+    verification_level: cited
+    required_flags: []
+    optional_flags: []
+    sources:
+      - type: release_notes
+        url: "https://github.com/sgl-project/sglang"
+        captured_date: "2026-04-24"
+    caveats_en: []
+    caveats_zh: []
+
+  - engine: sglang
+    version_spec: ">=0.4.0"
+    matches_model_type: qwen3
+    support: full
+    verification_level: cited
+    required_flags: []
+    optional_flags: []
+    sources:
+      - type: release_notes
+        url: "https://docs.sglang.io/basic_usage/popular_model_usage.html"
+        captured_date: "2026-04-24"
+    caveats_en: []
+    caveats_zh: []
+
+  - engine: sglang
+    version_spec: ">=0.4.0"
+    matches_model_type: mixtral
+    support: full
+    verification_level: cited
+    required_flags: []
+    optional_flags: []
+    sources:
+      - type: release_notes
+        url: "https://github.com/sgl-project/sglang"
+        captured_date: "2026-04-24"
+    caveats_en: []
+    caveats_zh: []
