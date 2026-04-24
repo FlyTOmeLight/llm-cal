@@ -7,6 +7,7 @@ import sys
 import typer
 from rich.console import Console
 
+from llm_cal.benchmark.runner import exit_code_from, render_results, run_all
 from llm_cal.common.i18n import detect_locale_from_env, set_locale, t
 from llm_cal.core.evaluator import Evaluator
 from llm_cal.hardware.loader import load_database
@@ -51,6 +52,15 @@ def main(
         "--list-gpus",
         help="List all supported GPUs and exit (no model_id needed)",
     ),
+    benchmark: bool = typer.Option(
+        False,
+        "--benchmark",
+        help=(
+            "Run the curated benchmark dataset: compare tool output against "
+            "reference values from HF API, model cards, vLLM recipes. "
+            "Requires network. Exit 0 on all-pass, 1 if any FAIL."
+        ),
+    ),
 ) -> None:
     """Evaluate a model against target hardware."""
     if lang in ("en", "zh"):
@@ -60,6 +70,11 @@ def main(
     if list_gpus:
         render_gpu_list(load_database(), _console)
         return
+
+    if benchmark:
+        results = run_all()
+        render_results(results, _console)
+        sys.exit(exit_code_from(results))
 
     if not model_id:
         _err.print("[red]Missing argument MODEL_ID. Use --help for usage.[/red]")

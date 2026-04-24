@@ -1,0 +1,109 @@
+# Reference benchmark dataset — curated anchor points for validating llm-cal
+# output against publicly-known values.
+#
+# This is NOT a synthetic benchmark. Each entry cites where the expected
+# values came from — HF API, model card text, vLLM/SGLang recipe, or
+# hand computation in the design doc. If you add an entry, cite sources.
+#
+# The runner (`llm-cal benchmark`) fetches each model's live config and
+# compares the tool's output against these expectations. Failures mean
+# either the tool drifted or the reference data is stale.
+schema_version: 1
+entries:
+  # ------------------------------------------------------------
+  # Signature case — DeepSeek-V4-Flash. Every claim here is the
+  # reason this tool exists (vs gpu_poor's naive FP8 assumption).
+  # ------------------------------------------------------------
+  - name: "DeepSeek-V4-Flash on 8x H800 (tool's reference case)"
+    model_id: deepseek-ai/DeepSeek-V4-Flash
+    gpu: H800
+    engine: vllm
+    expectations:
+      - field: attention_variant
+        expected: CSA_HCA
+        source: "config.json compress_ratios length=44 matches n_layers+n_mtp"
+      - field: quantization
+        expected: FP4_FP8_MIXED
+        source: "HF model card: 'FP4 + FP8 Mixed: MoE experts FP4, others FP8'"
+      - field: weight_bytes
+        expected_min: 158_000_000_000
+        expected_max: 162_000_000_000
+        source: "HF siblings API (46x ~3.57 GB safetensors shards ≈ 160 GB)"
+      - field: fleet_prod_gpus
+        expected: 8
+        source: "Design doc hand computation: 8x H800 for prod-scale concurrency"
+      - field: is_moe
+        expected: true
+        source: "config.json n_routed_experts=256"
+
+  # ------------------------------------------------------------
+  # Dense GQA — Qwen2.5-72B. Validates:
+  #  - dense (no MoE) detection
+  #  - BF16/FP16 quantization path
+  #  - GQA KV sharding math (critical for Llama-family models)
+  # ------------------------------------------------------------
+  - name: "Qwen2.5-72B on 8x H100 (GQA reference)"
+    model_id: Qwen/Qwen2.5-72B-Instruct
+    gpu: H100
+    engine: vllm
+    expectations:
+      - field: attention_variant
+        expected: GQA
+        source: "config.json num_kv_heads=8 < num_attention_heads=64"
+      - field: quantization
+        expected: FP16
+        source: "config.json torch_dtype=bfloat16, no quantization_config"
+      - field: weight_bytes
+        expected_min: 140_000_000_000
+        expected_max: 150_000_000_000
+        source: "HF siblings API — 72.7B params × 2 bytes ≈ 145 GB"
+      - field: is_moe
+        expected: false
+        source: "config.json has no n_routed_experts / num_local_experts"
+      - field: fleet_prod_gpus_at_most
+        expected: 8
+        source: "Weights fit on 8x H100 (145 GB / 8 ≈ 18 GB per GPU)"
+
+  # ------------------------------------------------------------
+  # DeepSeek-V3 (classic MoE + MLA, not V3.2's NSA) — validates MLA detection
+  # ------------------------------------------------------------
+  - name: "DeepSeek-V3 on H800 (MoE+MLA, no sparse attention)"
+    model_id: deepseek-ai/DeepSeek-V3
+    gpu: H800
+    engine: vllm
+    expectations:
+      - field: attention_variant
+        expected: MLA
+        source: "config.json q_lora_rank=1536, no compress_ratios or nsa_config"
+      - field: is_moe
+        expected: true
+        source: "config.json n_routed_experts=256"
+      - field: quantization
+        expected: FP8
+        source: "config.json quantization_config.quant_method=fp8"
+      - field: weight_bytes
+        expected_min: 680_000_000_000
+        expected_max: 700_000_000_000
+        source: "HF siblings API — 671B params × 1 byte (FP8) ≈ 670 GB"
+
+  # ------------------------------------------------------------
+  # Mixtral 8x7B — dense-MoE variant, non-MLA
+  # ------------------------------------------------------------
+  - name: "Mixtral 8x7B on 4x H100 (standard MoE, no MLA)"
+    model_id: mistralai/Mixtral-8x7B-v0.1
+    gpu: H100
+    engine: vllm
+    expectations:
+      - field: attention_variant
+        expected: GQA
+        source: "config.json num_kv_heads=8 < num_attention_heads=32"
+      - field: is_moe
+        expected: true
+        source: "config.json num_local_experts=8"
+      - field: quantization
+        expected: FP16
+        source: "config.json torch_dtype=bfloat16, no quantization_config"
+      - field: weight_bytes
+        expected_min: 90_000_000_000
+        expected_max: 100_000_000_000
+        source: "HF siblings API — 46.7B total params × 2 bytes ≈ 93 GB"
