@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from llm_cal.model_source.base import SiblingFile
 from llm_cal.weight_analyzer import analyze
+from llm_cal.weight_analyzer.fingerprint import QuantFingerprint
 from llm_cal.weight_analyzer.reconciler import reconcile
 
 
@@ -114,3 +115,90 @@ class TestReconcilerEdgeCases:
         # 10 bytes/param = way above FP16's 2.00
         report = reconcile(10 * 1_000_000, 1_000_000)
         assert report.best.value == "UNKNOWN"
+
+
+class TestReconcilerFingerprint:
+    """Fingerprint-driven tie-breaking — the v0.1.2 story."""
+
+    def test_fingerprint_breaks_fp4_gptq_awq_tie(self):
+        """Three schemes tie at 0.55 bpp; fingerprint picks the real one."""
+        observed = 160_300_000_000
+        total_params = 284_000_000_000
+
+        fp_awq = QuantFingerprint(
+            scheme="AWQ_INT4",
+            source_type="safetensors_header",
+            evidence="safetensors header has .qweight + .qzeros, no .g_idx (AWQ marker)",
+        )
+        report = reconcile(observed, total_params, fingerprint=fp_awq)
+
+        # Declared scheme wins over argmin (which was FP4_FP8_MIXED by dict order)
+        assert report.best.value == "AWQ_INT4"
+        # VERIFIED label because we read authoritative evidence
+        assert report.best.label.value == "verified"
+        assert "AWQ marker" in (report.best.source or "")
+
+    def test_fingerprint_gptq(self):
+        observed = 160_300_000_000
+        total_params = 284_000_000_000
+
+        fp_gptq = QuantFingerprint(
+            scheme="GPTQ_INT4",
+            source_type="config_json",
+            evidence="config.json quantization_config.quant_method=gptq, bits=4",
+        )
+        report = reconcile(observed, total_params, fingerprint=fp_gptq)
+
+        assert report.best.value == "GPTQ_INT4"
+        assert report.best.label.value == "verified"
+        assert "quant_method=gptq" in (report.best.source or "")
+
+    def test_fingerprint_fp4_fp8_mixed(self):
+        observed = 160_300_000_000
+        total_params = 284_000_000_000
+
+        fp = QuantFingerprint(
+            scheme="FP4_FP8_MIXED",
+            source_type="safetensors_header",
+            evidence="safetensors header has both FP4 and FP8 weight tensors",
+        )
+        report = reconcile(observed, total_params, fingerprint=fp)
+
+        assert report.best.value == "FP4_FP8_MIXED"
+        assert report.best.label.value == "verified"
+
+    def test_fingerprint_disagreement_still_trusts_declaration(self):
+        """Fingerprint says FP8 but bytes predict 45% off (classic gpu_poor trap).
+
+        We trust the declaration and flag the mismatch in source.
+        """
+        observed = 160_300_000_000  # matches FP4_FP8_MIXED
+        total_params = 284_000_000_000
+
+        fp_fp8 = QuantFingerprint(
+            scheme="FP8",
+            source_type="config_json",
+            evidence="config.json quant_method=fp8",
+        )
+        report = reconcile(observed, total_params, fingerprint=fp_fp8)
+
+        assert report.best.value == "FP8"
+        assert report.best.label.value == "verified"
+        assert "NOTE" in (report.best.source or "")
+        assert "off by" in (report.best.source or "")
+
+    def test_unknown_fingerprint_falls_back(self):
+        """Fingerprint declares a scheme we don't have a bpp anchor for."""
+        observed = 160_300_000_000
+        total_params = 284_000_000_000
+
+        fp_unknown = QuantFingerprint(
+            scheme="UNKNOWN",  # type: ignore[arg-type]
+            source_type="config_json",
+            evidence="we declared UNKNOWN for some reason",
+        )
+        report = reconcile(observed, total_params, fingerprint=fp_unknown)
+
+        # Falls back to argmin (FP4_FP8_MIXED by bytes)
+        assert report.best.value == "FP4_FP8_MIXED"
+        assert "fell back" in (report.best.source or "")

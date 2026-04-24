@@ -8,10 +8,13 @@ Rules:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from llm_cal.model_source.base import SiblingFile
 from llm_cal.output.labels import AnnotatedValue, Label
+
+if TYPE_CHECKING:
+    from llm_cal.weight_analyzer.fingerprint import QuantFingerprint
 
 # Known byte-per-param values. bits/param = bpp * 8.
 QuantizationScheme = Literal[
@@ -57,12 +60,17 @@ def _safetensors_total_bytes(siblings: tuple[SiblingFile, ...]) -> int:
 def analyze(
     siblings: tuple[SiblingFile, ...],
     total_params: int | None,
+    fingerprint: QuantFingerprint | None = None,
 ) -> WeightReport:
     """Compute weight report from sibling files + param count.
 
     `total_params` comes from summing across the architecture (computed elsewhere)
     or is None if we couldn't determine it — in which case we skip the inference
     step and return raw file size only.
+
+    `fingerprint` (optional) is authoritative evidence from config.json or
+    safetensors header. When present, it overrides the bpp nearest-match
+    heuristic for quantization_guess (VERIFIED instead of INFERRED).
     """
     observed_bytes = _safetensors_total_bytes(siblings)
     total_bytes = AnnotatedValue(
@@ -88,7 +96,16 @@ def analyze(
         Label.INFERRED,
         source=f"{observed_bytes} bytes / {total_params} params",
     )
-    quant = _guess_quantization(bpp)
+
+    if fingerprint is not None:
+        quant: AnnotatedValue[QuantizationScheme] = AnnotatedValue(
+            fingerprint.scheme,
+            Label.VERIFIED,
+            source=fingerprint.evidence,
+        )
+    else:
+        quant = _guess_quantization(bpp)
+
     return WeightReport(
         total_bytes=total_bytes,
         bits_per_param=bits_per_param,

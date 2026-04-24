@@ -33,7 +33,16 @@ from llm_cal.performance.compute import (
 from llm_cal.performance.concurrency import ConcurrencyAnalysis
 from llm_cal.performance.concurrency import analyze as analyze_concurrency
 from llm_cal.weight_analyzer import WeightReport, analyze
+from llm_cal.weight_analyzer.fingerprint import (
+    QuantFingerprint,
+    from_config,
+    from_safetensors_dtypes,
+)
 from llm_cal.weight_analyzer.reconciler import ReconciliationReport, reconcile
+from llm_cal.weight_analyzer.safetensors_reader import (
+    fetch_tensor_dtypes,
+    pick_sample_shard,
+)
 
 _KV_REFERENCE_CTX = 131_072  # matches fleet.planner's _REFERENCE_CTX_TOKENS
 
@@ -102,11 +111,17 @@ class Evaluator:
         total_params_est = estimate_total_params(profile)
         total_params = total_params_est.value
 
+        fingerprint = self._resolve_quant_fingerprint(artifact)
         weight = analyze(
             artifact.siblings,
             total_params=total_params if total_params > 0 else None,
+            fingerprint=fingerprint,
         )
-        reconciliation = reconcile(weight.total_bytes.value, total_params or 1)
+        reconciliation = reconcile(
+            weight.total_bytes.value,
+            total_params or 1,
+            fingerprint=fingerprint,
+        )
 
         contexts_to_report = self._select_context_lengths(profile, context_length)
         kv_by_ctx = {
@@ -264,6 +279,38 @@ class Evaluator:
             return cached
         self._cache.set(key, artifact)
         return artifact
+
+    def _resolve_quant_fingerprint(self, artifact: ModelArtifact) -> QuantFingerprint | None:
+        """Resolve the quantization scheme via authoritative evidence.
+
+        Priority:
+          1. config.json `quantization_config` — explicit author declaration.
+             Free: no network call beyond what we already did.
+          2. safetensors file header — per-tensor dtype fingerprint. One
+             Range GET on the first shard. Catches DeepSeek-V4-Flash-style
+             mixed packs that don't declare in config.json.
+
+        Returns None on any failure. The reconciler falls back to bytes-only
+        argmin in that case (v0.1.1 behavior).
+        """
+        fp = from_config(artifact.config)
+        if fp is not None:
+            return fp
+
+        shard = pick_sample_shard(artifact.siblings)
+        if shard is None:
+            return None
+
+        dtypes = fetch_tensor_dtypes(
+            source=artifact.source,
+            model_id=artifact.model_id,
+            revision=artifact.commit_sha or "main",
+            shard_filename=shard.filename,
+        )
+        if not dtypes:
+            return None
+
+        return from_safetensors_dtypes(dtypes)
 
     @staticmethod
     def _select_context_lengths(profile: ArchitectureProfile, override: int | None) -> list[int]:
