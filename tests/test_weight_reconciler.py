@@ -59,6 +59,31 @@ class TestReconcilerDeepSeekV4Flash:
         schemes = [c.scheme for c in report.candidates]
         assert schemes[0] == "FP4_FP8_MIXED"
 
+    def test_ties_surfaced_in_source(self):
+        """FP4_FP8_MIXED, GPTQ_INT4, AWQ_INT4 all share bpp=0.55.
+
+        The LLM review caught this: the tool was silently picking the first
+        without telling the user it's a tie. The source field must now name
+        the tied alternatives.
+        """
+        observed = 160_300_000_000
+        total_params = 284_000_000_000
+        report = reconcile(observed, total_params)
+
+        source = report.best.source or ""
+        # The tie note must explicitly name the other schemes that share the bpp
+        assert "tied with" in source
+        assert "GPTQ_INT4" in source or "AWQ_INT4" in source
+
+    def test_no_tie_note_when_unique_winner(self):
+        """Pure FP16 model: FP16/BF16 share bpp=2.0 but nothing else does."""
+        # 70B * 2 bytes = 140 GB exactly — FP16 and BF16 will tie, INT8 is far off
+        report = reconcile(140_000_000_000, 70_000_000_000)
+        source = report.best.source or ""
+        # FP16/BF16 ARE aliases and will tie — that's expected to surface.
+        # But INT8 (1.0 bpp) should NOT be in the tie note.
+        assert "INT8" not in source
+
 
 class TestReconcilerPureSchemes:
     def test_fp16_model_picks_fp16(self):

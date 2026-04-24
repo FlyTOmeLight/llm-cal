@@ -97,6 +97,26 @@ def reconcile(observed_bytes: int, total_params: int) -> ReconciliationReport:
             ),
         )
 
+    # Detect ties: schemes whose relative_error is within 1% of the winner's.
+    # When FP4_FP8_MIXED, GPTQ_INT4, and AWQ_INT4 all have bpp=0.55, they tie —
+    # the tool should surface this rather than silently picking the first.
+    tied_schemes = [
+        c.scheme
+        for c in candidates
+        if abs(c.relative_error - best_err) < 0.01 and c.relative_error <= 0.15
+    ]
+    if len(tied_schemes) > 1:
+        tie_note = (
+            f" — tied with {', '.join(s for s in tied_schemes if s != best_scheme)} "
+            f"at the same bits/param; distinguishing requires reading the "
+            f"per-tensor dtype in safetensors metadata (v0.1 does not do this)"
+        )
+        source_text = (
+            f"best match among {len(candidates)} candidates, {best_err * 100:.1f}% error{tie_note}"
+        )
+    else:
+        source_text = f"best match among {len(candidates)} candidates, {best_err * 100:.1f}% error"
+
     return ReconciliationReport(
         observed_bytes=observed_bytes,
         total_params=total_params,
@@ -104,6 +124,6 @@ def reconcile(observed_bytes: int, total_params: int) -> ReconciliationReport:
         best=AnnotatedValue(
             best_scheme,
             Label.INFERRED,
-            source=(f"best match among {len(candidates)} candidates, {best_err * 100:.1f}% error"),
+            source=source_text,
         ),
     )
