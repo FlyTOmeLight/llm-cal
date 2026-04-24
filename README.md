@@ -1,5 +1,9 @@
 # llm-cal
 
+[![CI](https://github.com/FlyTOmeLight/llm-cal/actions/workflows/ci.yml/badge.svg)](https://github.com/FlyTOmeLight/llm-cal/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/llm-cal.svg)](https://pypi.org/project/llm-cal/)
+[![Docs](https://img.shields.io/badge/docs-flytomelight.github.io-blue)](https://flytomelight.github.io/llm-cal/)
+
 **LLM inference hardware calculator** — architecture-aware, engine-version-aware, honest-labeled.
 
 Give it a HuggingFace / ModelScope model id and a GPU type, get back:
