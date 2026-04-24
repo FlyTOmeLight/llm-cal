@@ -517,6 +517,56 @@ def _verified_tag() -> Text:
     return Text(f"[{t('label.verified')}]", style=_LABEL_STYLES[Label.VERIFIED])
 
 
+def render_explain(entries: list[Any], console: Console | None = None) -> None:
+    """Render `--explain` block: full derivation trace for each number.
+
+    `entries` is a list of `core.explain.ExplainEntry`.
+    """
+    console = console or Console()
+
+    console.print()
+    console.print(Panel.fit(t("section.explain"), border_style="magenta"))
+    console.print(f"[dim italic]{t('explain.intro')}[/dim italic]")
+    console.print()
+
+    for entry in entries:
+        # Title bar per entry
+        console.print(Panel.fit(f"[bold]{entry.heading}[/bold]", border_style="cyan"))
+
+        # Formula (monospace)
+        console.print(f"[bold]{t('explain.formula')}:[/bold]")
+        for line in entry.formula.splitlines():
+            console.print(f"  [magenta]{line}[/magenta]")
+
+        # Inputs
+        if entry.inputs:
+            console.print(f"[bold]{t('explain.inputs')}:[/bold]")
+            for inp in entry.inputs:
+                note = f" [dim]({inp.note})[/dim]" if inp.note else ""
+                console.print(
+                    f"  [cyan]{inp.name}[/cyan] = {inp.value}  [dim]{inp.label}[/dim]{note}"
+                )
+
+        # Steps
+        if entry.steps:
+            console.print(f"[bold]{t('explain.steps')}:[/bold]")
+            for step in entry.steps:
+                for line in step.splitlines():
+                    console.print(f"  {line}")
+
+        # Result
+        console.print(f"[bold]{t('explain.result')}:[/bold]  {entry.result}")
+
+        # Source + methodology anchor
+        if entry.source:
+            console.print(f"[bold]{t('explain.source')}:[/bold]  {entry.source}")
+        if entry.methodology_anchor:
+            console.print(
+                f"[dim]{t('explain.see_also')}: docs/methodology.md{entry.methodology_anchor}[/dim]"
+            )
+        console.print()
+
+
 def render_gpu_list(db: GPUDatabase, console: Console | None = None) -> None:
     """Print the supported-GPU table. Invoked by `llm-cal --list-gpus`."""
     console = console or Console()

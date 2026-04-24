@@ -10,13 +10,14 @@ from rich.console import Console
 from llm_cal.benchmark.runner import exit_code_from, render_results, run_all
 from llm_cal.common.i18n import detect_locale_from_env, set_locale, t
 from llm_cal.core.evaluator import Evaluator
+from llm_cal.core.explain import build as build_explain
 from llm_cal.hardware.loader import load_database
 from llm_cal.model_source.base import (
     AuthRequiredError,
     ModelNotFoundError,
     SourceUnavailableError,
 )
-from llm_cal.output.formatter import render, render_gpu_list
+from llm_cal.output.formatter import render, render_explain, render_gpu_list
 
 # Set locale from env first; --lang flag can override inside main()
 set_locale(detect_locale_from_env())
@@ -95,6 +96,15 @@ def main(
             "to 60% efficiency under load, pass 1.67. See docs/methodology.md."
         ),
     ),
+    explain: bool = typer.Option(
+        False,
+        "--explain",
+        help=(
+            "Print the full derivation trace (formula, inputs, step-by-step, "
+            "source) for every non-trivial number. Feed the output to an LLM "
+            "if you want a second opinion on the math."
+        ),
+    ),
 ) -> None:
     """Evaluate a model against target hardware."""
     if lang in ("en", "zh"):
@@ -144,6 +154,8 @@ def main(
         sys.exit(4)
 
     render(report, _console)
+    if explain:
+        render_explain(build_explain(report), _console)
 
 
 if __name__ == "__main__":

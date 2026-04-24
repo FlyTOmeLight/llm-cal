@@ -330,6 +330,30 @@ _MESSAGES: dict[str, dict[Locale, str]] = {
         "en": "MoE expert offload to CPU: frees HBM for more KV cache at the cost of PCIe latency per new expert.",
         "zh": "MoE 专家卸载到 CPU：释放 HBM 给 KV cache，代价是新专家激活时的 PCIe 延迟。",
     },
+    # Explain section
+    "section.explain": {
+        "en": "Full derivation traces (--explain)",
+        "zh": "完整推导链（--explain）",
+    },
+    "explain.formula": {"en": "Formula", "zh": "公式"},
+    "explain.inputs": {"en": "Inputs", "zh": "输入"},
+    "explain.steps": {"en": "Computation", "zh": "计算步骤"},
+    "explain.result": {"en": "Result", "zh": "结果"},
+    "explain.source": {"en": "Source", "zh": "来源"},
+    "explain.see_also": {"en": "See also", "zh": "延伸阅读"},
+    "explain.intro": {
+        "en": (
+            "Each entry below shows the formula used, the inputs that went in, "
+            "every computation step, and the primary source. "
+            "Paste any single entry into an LLM and ask 'does this math check out?' "
+            "— the tool stays deterministic, the second opinion is yours."
+        ),
+        "zh": (
+            "下面每一项都给出所用公式、输入、每一步计算、主要来源。"
+            "把任一项复制粘贴给 LLM，问『这个推理对吗』即可。"
+            "工具保持确定性，second opinion 交给你。"
+        ),
+    },
 }
 
 
