@@ -181,6 +181,13 @@ _MESSAGES: dict[str, dict[Locale, str]] = {
     },
     "hw.bool_yes": {"en": "yes", "zh": "是"},
     "hw.bool_no": {"en": "no", "zh": "否"},
+    # Labels — localized display names. Enum identity stays English.
+    "label.verified": {"en": "verified", "zh": "已验证"},
+    "label.inferred": {"en": "inferred", "zh": "推断"},
+    "label.estimated": {"en": "estimated", "zh": "估算"},
+    "label.cited": {"en": "cited", "zh": "引用"},
+    "label.unverified": {"en": "unverified", "zh": "未经验证"},
+    "label.unknown": {"en": "unknown", "zh": "未知"},
     # Source attribution
     "source.pr": {"en": "PR", "zh": "PR"},
     "source.release_notes": {"en": "release notes", "zh": "release note"},

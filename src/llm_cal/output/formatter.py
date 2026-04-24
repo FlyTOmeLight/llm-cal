@@ -32,7 +32,8 @@ _LABEL_STYLES: dict[Label, str] = {
 
 def format_tag(av: AnnotatedValue[Any]) -> Text:
     style = _LABEL_STYLES.get(av.label, "white")
-    return Text(f"[{av.label.value}]", style=style)
+    display = t(f"label.{av.label.value}")  # localized; falls back to English
+    return Text(f"[{display}]", style=style)
 
 
 def _fmt_bytes(n: int) -> str:
@@ -408,12 +409,13 @@ def _render_label_legend(console: Console) -> None:
     legend = Text()
     legend.append(f"{t('section.labels')} ", style="dim")
     for label in Label:
-        legend.append(f"[{label.value}] ", style=_LABEL_STYLES.get(label, "white"))
+        display = t(f"label.{label.value}")
+        legend.append(f"[{display}] ", style=_LABEL_STYLES.get(label, "white"))
     console.print(legend)
 
 
 def _verified_tag() -> Text:
-    return Text(f"[{Label.VERIFIED.value}]", style=_LABEL_STYLES[Label.VERIFIED])
+    return Text(f"[{t('label.verified')}]", style=_LABEL_STYLES[Label.VERIFIED])
 
 
 def render_gpu_list(db: GPUDatabase, console: Console | None = None) -> None:
@@ -465,7 +467,9 @@ def _verif_label(entry: EngineCompatEntry) -> Text:
         "cited": Label.CITED,
         "unverified": Label.UNVERIFIED,
     }.get(entry.verification_level, Label.UNKNOWN)
-    return Text(f"[{label.value}]", style=_LABEL_STYLES.get(label, "white"))
+    return Text(
+        f"[{t(f'label.{label.value}')}]", style=_LABEL_STYLES.get(label, "white")
+    )
 
 
 def _fmt_flag(f: EngineFlag) -> str:
