@@ -273,16 +273,63 @@ gpus:
   # ========================================================================
   # Huawei Ascend
   # ========================================================================
-  - id: "910B"
-    aliases: [Ascend-910B, "910B2", "910B3"]
+  # The 910B "series" is actually a set of sub-variants (B1/B2/B3/B4) with
+  # different compute tiers and memory sizes. `910B` as a plain id resolves
+  # to 910B3 (the most common training configuration).
+  - id: "910A"
+    aliases: [Ascend-910A]
+    memory_gb: 32
+    nvlink_bandwidth_gbps: 400
+    fp16_tflops: 256
+    fp8_support: false
+    fp4_support: false
+    spec_source: "Ascend 910 (1st gen) — 7nm, 32 GB HBM. Community-compiled spec."
+    notes_en: "Huawei Ascend 910 (1st gen, 2019). Predecessor to 910B. Still deployed in many older clusters. HCCS interconnect."
+    notes_zh: "华为昇腾 910 第一代（2019 年），910B 的前身。很多老集群仍在使用。HCCS 互联。"
+
+  - id: "910B1"
+    aliases: [Ascend-910B1]
+    memory_gb: 64
+    nvlink_bandwidth_gbps: 400
+    fp16_tflops: 414
+    fp8_support: false
+    fp4_support: false
+    spec_source: "Ascend 910B1 — training variant, Atlas 800T A2. Commonly cited as top-tier 910B sub-variant; TSMC 7nm process."
+    notes_en: "Top-tier 910B training variant. 64 GB HBM2, 414 TFLOPS FP16. Used in Atlas 800T A2 training servers. No native FP8."
+    notes_zh: "910B 系列顶配训练版本。64 GB HBM2，FP16 算力 414 TFLOPS。搭载于 Atlas 800T A2 训练服务器。不原生支持 FP8。"
+
+  - id: "910B2"
+    aliases: [Ascend-910B2]
     memory_gb: 64
     nvlink_bandwidth_gbps: 400
     fp16_tflops: 376
     fp8_support: false
     fp4_support: false
-    spec_source: "Huawei Ascend 910B — commonly cited specs; official datasheet limited distribution"
-    notes_en: "Huawei Ascend. HCCS interconnect instead of NVLink. vLLM/SGLang support requires MindIE / CANN path; check specific versions."
-    notes_zh: "华为昇腾，使用 HCCS 替代 NVLink。部分推理引擎需走 MindIE / CANN 路径，vLLM/SGLang 支持需看具体版本。"
+    spec_source: "Ascend 910B2 — training variant, commonly cited as standard 910B training configuration."
+    notes_en: "Standard 910B training variant. 64 GB HBM2, 376 TFLOPS FP16. General-purpose training server baseline."
+    notes_zh: "910B 常规训练版本。64 GB HBM2，FP16 算力 376 TFLOPS。通用训练服务器标准配置。"
+
+  - id: "910B3"
+    aliases: [Ascend-910B3, "910B", Ascend-910B]
+    memory_gb: 64
+    nvlink_bandwidth_gbps: 400
+    fp16_tflops: 313
+    fp8_support: false
+    fp4_support: false
+    spec_source: "Ascend 910B3 — training variant, SMIC-produced per industry reports. (aliased as bare `910B` for convenience)"
+    notes_en: "910B3 training variant, 313 TFLOPS FP16. Believed to be SMIC-produced (vs TSMC for B1/B2). The `910B` bare name resolves here since B3 is the most commonly referenced."
+    notes_zh: "910B3 训练版本，FP16 算力 313 TFLOPS。业界普遍认为由中芯国际生产（B1/B2 据传为台积电）。裸写 `910B` 时默认解析到此条目（最常被引用）。"
+
+  - id: "910B4"
+    aliases: [Ascend-910B4]
+    memory_gb: 32
+    nvlink_bandwidth_gbps: 400
+    fp16_tflops: 280
+    fp8_support: false
+    fp4_support: false
+    spec_source: "Ascend 910B4 — inference variant, 32 GB HBM (half of B1/B2/B3). Atlas 800I A2 inference server."
+    notes_en: "910B4 is the inference-oriented 910B variant. 32 GB HBM (half of training variants), 280 TFLOPS FP16. Deployed in Atlas 800I A2 inference servers."
+    notes_zh: "910B4 是 910B 系列的推理版本。32 GB HBM（训练版本的一半），FP16 算力 280 TFLOPS。搭载于 Atlas 800I A2 推理服务器。"
 
   - id: "910C"
     aliases: [Ascend-910C]
@@ -294,3 +341,94 @@ gpus:
     spec_source: "Huawei Ascend 910C — launched 2024, commonly cited specs pending official datasheet"
     notes_en: "Huawei Ascend 910C (2024). Roughly 2x compute vs 910B at similar memory. FP8 support status unclear — check CANN version notes. Software ecosystem matures but still behind NVIDIA."
     notes_zh: "华为昇腾 910C（2024 年）。算力大约是 910B 的两倍，显存相当。FP8 支持情况需看 CANN 版本。软件生态持续完善但仍落后于 NVIDIA。"
+
+  - id: Atlas-300I-Duo
+    aliases: [Atlas300IDuo, 300I-Duo]
+    memory_gb: 48
+    nvlink_bandwidth_gbps: 0
+    fp16_tflops: 140
+    fp8_support: false
+    fp4_support: false
+    spec_source: "Huawei Atlas 300I Duo inference card — 2x Ascend 310P per card. 140 TFLOPS FP16 per card, 48 GB LPDDR4X."
+    notes_en: "Huawei Atlas 300I Duo inference card: 2x Ascend 310P with combined 48 GB LPDDR4X (96 GB variant available). 280 TOPS INT8. LPDDR4X gives 204 GB/s total bandwidth — much lower than HBM-based cards. PCIe-only, no NVLink. Best for cost-sensitive inference."
+    notes_zh: "华为 Atlas 300I Duo 推理卡：双 Ascend 310P，合计 48 GB LPDDR4X（另有 96 GB 版本）。INT8 280 TOPS。显存是 LPDDR4X，带宽 204 GB/s，远低于 HBM 卡。仅 PCIe，无 NVLink。主要面向成本敏感的推理场景。"
+
+  # ========================================================================
+  # Chinese domestic AI accelerators (non-NVIDIA / non-AMD)
+  # ========================================================================
+  - id: MXC500
+    aliases: [MetaX-MXC500, XiYun-C500, 曦云C500]
+    memory_gb: 64
+    nvlink_bandwidth_gbps: 800
+    fp16_tflops: 240
+    fp8_support: false
+    fp4_support: false
+    spec_source: "MetaX 沐曦 MXC500 / 曦云 C500 (PCIe variant, 350W). OAM variant has 280 TFLOPS FP16 @ 450W. 64 GB HBM2e, 1.8 TB/s memory bandwidth, MetaXLink interconnect."
+    notes_en: "MetaX (沐曦) MXC500. 7nm, CUDA-compatible via MXMACA stack. PCIe variant: 240 TFLOPS FP16, 350W. OAM variant: 280 TFLOPS FP16, 450W. Targets A100-class workloads. No native FP8."
+    notes_zh: "沐曦曦云 C500。7nm 工艺，通过 MXMACA 软件栈兼容 CUDA。PCIe 版本 FP16 240 TFLOPS / 350W，OAM 版本 280 TFLOPS / 450W。对标 A100 场景。不原生支持 FP8。"
+
+  - id: MXC550
+    aliases: [MetaX-MXC550, XiYun-C550, 曦云C550]
+    memory_gb: 64
+    nvlink_bandwidth_gbps: 896
+    fp16_tflops: 240
+    fp8_support: false
+    fp4_support: false
+    spec_source: "MetaX 沐曦 MXC550 / 曦云 C550 (OAM, 2024). Partial specs from third-party comparison docs; full datasheet TBD. 8-card fabric bandwidth 896 GB/s."
+    notes_en: "MetaX (沐曦) MXC550 — 2024 OAM-format flagship. Supports OAM 1.5 + 2.0. 8-card fabric bandwidth 896 GB/s. Full specs pending official datasheet — figures here are from third-party comparison articles."
+    notes_zh: "沐曦曦云 C550 — 2024 年 OAM 形态旗舰。支持 OAM 1.5 + 2.0 规范。八卡全互联带宽 896 GB/s。完整规格待官方数据表披露，此处数字来自第三方对比资料。"
+
+  - id: Kunlun-P800
+    aliases: [KunlunXin-P800, 昆仑芯P800, Kunlun-Gen3]
+    memory_gb: 96
+    nvlink_bandwidth_gbps: 400
+    fp16_tflops: 345
+    fp8_support: true
+    fp4_support: false
+    spec_source: "KunlunXin P800 (3rd gen, 2024). 96 GB HBM3 (largest among Chinese domestic AI chips). Baidu Cloud uses P800 for first-party inference. Specs partially inferred from public Baidu announcements; official datasheet limited distribution."
+    notes_en: "Baidu KunlunXin P800 — 3rd gen, 2024. 96 GB HBM3. Reported to support 8-bit inference and MoE optimizations. Baidu's internal clusters run Kunlun P800 at 10k+ card scale. Figures here are from public Baidu materials; official spec sheet not fully public."
+    notes_zh: "百度昆仑芯 P800 — 第三代，2024 年。96 GB HBM3（国产 AI 芯片中显存最大之一）。报告支持 8bit 推理和 MoE 优化。百度内部 1 万卡以上规模部署。数字来自百度公开资料，完整规格表未完全披露。"
+
+  - id: Kunlun-R200
+    aliases: [KunlunXin-R200, 昆仑芯R200, Kunlun-Gen2]
+    memory_gb: 32
+    nvlink_bandwidth_gbps: 200
+    fp16_tflops: 128
+    fp8_support: false
+    fp4_support: false
+    spec_source: "KunlunXin R200 (2nd gen, 2021). 7nm XPU architecture. FP16 128 TFLOPS / INT8 256 TOPS."
+    notes_en: "Baidu KunlunXin R200 — 2nd gen, 7nm. FP16 128 TFLOPS, INT8 256 TOPS. XPU architecture. PCIe 4.0 + XCCL interconnect. No FP8."
+    notes_zh: "百度昆仑芯 R200 — 第二代，7nm XPU 架构。FP16 128 TFLOPS，INT8 256 TOPS。PCIe 4.0 + 昆仑芯互联 XCCL。无 FP8。"
+
+  - id: BR100
+    aliases: [Biren-BR100, 壁仞BR100, 壁砺100]
+    memory_gb: 64
+    nvlink_bandwidth_gbps: 512
+    fp16_tflops: 1024
+    fp8_support: false
+    fp4_support: false
+    spec_source: "Biren 壁仞 BR100 (OAM, 550W). 7nm Chiplet, 77B transistors. BF16/FP16 1024 TFLOPS, INT8 2048 TOPS, 64 GB HBM2e 1.64 TB/s. BLINK 512 GB/s 8-card fabric."
+    notes_en: "Biren BR100 (壁仞) — 2022 flagship. OAM format, 550W. 1024 TFLOPS BF16/FP16 (PFLOPS class), 64 GB HBM2e. BLINK interconnect 512 GB/s (8-card fabric). No FP8. US export-restricted since 2022 — production status uncertain."
+    notes_zh: "壁仞 BR100 — 2022 年旗舰 OAM 卡，550W。BF16/FP16 1024 TFLOPS（PFLOPS 级），64 GB HBM2e。BLINK 互联 512 GB/s（8 卡全互联）。无 FP8。2022 年被美国出口管制，后续量产状态不明。"
+
+  - id: BR104
+    aliases: [Biren-BR104, 壁仞BR104, 壁砺104]
+    memory_gb: 32
+    nvlink_bandwidth_gbps: 128
+    fp16_tflops: 512
+    fp8_support: false
+    fp4_support: false
+    spec_source: "Biren 壁仞 BR104 (PCIe, 300W). Single-die version of BR100 with halved specs. BF16/FP16 512 TFLOPS, 32 GB HBM2e. Won MLPerf Inference ResNet50 and BERT single-card top-1 in its class."
+    notes_en: "Biren BR104 — PCIe single-die version of BR100. 300W, 512 TFLOPS BF16/FP16, 32 GB HBM2e. Won MLPerf Inference BERT (1.58x A100 in server mode). No FP8. Export-restricted."
+    notes_zh: "壁仞 BR104 — BR100 的单 die PCIe 版本。300W，BF16/FP16 512 TFLOPS，32 GB HBM2e。MLPerf Inference BERT 测试 server 模式性能达 A100 的 1.58 倍。无 FP8。已被出口管制。"
+
+  - id: BI-V100
+    aliases: [Iluvatar-BI-V100, 天数天垓100, TianGai-100]
+    memory_gb: 32
+    nvlink_bandwidth_gbps: 64
+    fp16_tflops: 147
+    fp8_support: false
+    fp4_support: false
+    spec_source: "Iluvatar CoreX 天数智芯 BI-V100 (天垓100). 7nm, SIMT, 24B transistors, 2.5D CoWoS packaging. FP16 147 TFLOPS / INT8 295 TOPS. 32 GB HBM2, 1.2 TB/s bandwidth. PCIe 4.0 x16, 250W TDP."
+    notes_en: "Iluvatar (天数智芯) BI-V100 — training/general-purpose. 7nm SIMT architecture, 32 GB HBM2, 1.2 TB/s memory bandwidth. FP16 147 TFLOPS, INT8 295 TOPS. 250W TDP. Interconnect bandwidth per card is modest (~64 GB/s shared)."
+    notes_zh: "天数智芯 BI-V100（天垓100）— 训练/通用 GPU。7nm SIMT 架构，32 GB HBM2，1.2 TB/s 显存带宽。FP16 147 TFLOPS，INT8 295 TOPS。250W TDP。单卡互联带宽 ~64 GB/s，相对较低。"

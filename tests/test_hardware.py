@@ -43,10 +43,60 @@ def test_database_loads_and_has_all_expected_gpus():
         "Gaudi3",
         "Gaudi2",
         # Huawei Ascend
-        "910B",
+        "910A",
+        "910B1",
+        "910B2",
+        "910B3",
+        "910B4",
         "910C",
+        "Atlas-300I-Duo",
+        # Chinese domestic (non-Huawei)
+        "MXC500",
+        "MXC550",
+        "Kunlun-P800",
+        "Kunlun-R200",
+        "BR100",
+        "BR104",
+        "BI-V100",
     }
     assert expected <= ids, f"missing: {expected - ids}"
+
+
+def test_910b_bare_alias_resolves_to_910b3():
+    """Bare `910B` id should resolve to 910B3 (most common training variant)."""
+    spec = lookup("910B")
+    assert spec.id == "910B3"
+    assert spec.memory_gb == 64
+    assert spec.fp16_tflops == 313
+
+
+def test_910b4_is_inference_variant():
+    """910B4 has half the memory (32 vs 64) — inference-oriented Atlas 800I A2."""
+    spec = lookup("910B4")
+    assert spec.memory_gb == 32
+    assert spec.fp16_tflops == 280
+
+
+def test_chinese_domestic_cards_present():
+    """Spot-check the four Chinese vendors beyond Huawei."""
+    assert lookup("MXC500").memory_gb == 64
+    assert lookup("Kunlun-P800").memory_gb == 96  # largest Chinese HBM in v0.1
+    assert lookup("BR100").fp16_tflops >= 1000  # PFLOPS-class BF16/FP16
+    assert lookup("BI-V100").memory_gb == 32
+
+
+def test_kunlun_p800_supports_fp8():
+    """P800 is the only Chinese domestic card in v0.1 with FP8 support."""
+    spec = lookup("Kunlun-P800")
+    assert spec.fp8_support is True
+
+
+def test_chinese_name_aliases_resolve():
+    """Chinese names should work as aliases."""
+    assert lookup("曦云C500").id == "MXC500"
+    assert lookup("昆仑芯P800").id == "Kunlun-P800"
+    assert lookup("壁仞BR100").id == "BR100"
+    assert lookup("天数天垓100").id == "BI-V100"
 
 
 def test_every_gpu_has_spec_source():
