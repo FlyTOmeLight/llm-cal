@@ -150,6 +150,130 @@ entries:
     caveats_en: []
     caveats_zh: []
 
+  - engine: vllm
+    version_spec: ">=0.6.0"
+    matches_model_type: qwen2
+    support: full
+    verification_level: cited
+    required_flags: []
+    optional_flags: []
+    sources:
+      - type: release_notes
+        url: "https://docs.vllm.ai/en/latest/models/supported_models.html"
+        captured_date: "2026-04-24"
+    caveats_en: []
+    caveats_zh: []
+
+  - engine: vllm
+    version_spec: ">=0.6.0"
+    matches_model_type: qwen2_moe
+    support: full
+    verification_level: cited
+    required_flags: []
+    optional_flags:
+      - flag: "--enable-expert-parallel"
+        value: null
+        note_en: "Enables DP+EP for MoE all-to-all distribution."
+        note_zh: "启用 DP+EP，对 MoE all-to-all 通信更友好。"
+    sources:
+      - type: release_notes
+        url: "https://docs.vllm.ai/en/latest/serving/expert_parallel_deployment/"
+        captured_date: "2026-04-24"
+    caveats_en: []
+    caveats_zh: []
+
+  - engine: vllm
+    version_spec: ">=0.5.0"
+    matches_model_type: gemma
+    support: full
+    verification_level: cited
+    required_flags: []
+    optional_flags: []
+    sources:
+      - type: release_notes
+        url: "https://docs.vllm.ai/en/latest/models/supported_models.html"
+        captured_date: "2026-04-24"
+    caveats_en:
+      - "Gemma uses tied embeddings — output head shares embedding weights."
+    caveats_zh:
+      - "Gemma 使用权重绑定的 embedding（tied embeddings），输出头与 embedding 共享权重。"
+
+  - engine: vllm
+    version_spec: ">=0.6.0"
+    matches_model_type: gemma2
+    support: full
+    verification_level: cited
+    required_flags: []
+    optional_flags: []
+    sources:
+      - type: release_notes
+        url: "https://docs.vllm.ai/en/latest/models/supported_models.html"
+        captured_date: "2026-04-24"
+    caveats_en: []
+    caveats_zh: []
+
+  - engine: vllm
+    version_spec: ">=0.7.0"
+    matches_model_type: gemma3
+    support: full
+    verification_level: cited
+    required_flags: []
+    optional_flags: []
+    sources:
+      - type: release_notes
+        url: "https://docs.vllm.ai/en/latest/models/supported_models.html"
+        captured_date: "2026-04-24"
+    caveats_en:
+      - "Gemma 3 adds vision modality — v0.1 of llm-cal treats it as text-only for now."
+    caveats_zh:
+      - "Gemma 3 新增视觉多模态能力，llm-cal v0.1 当作纯文本模型处理。"
+
+  - engine: vllm
+    version_spec: ">=0.5.0"
+    matches_model_type: phi
+    support: full
+    verification_level: cited
+    required_flags: []
+    optional_flags: []
+    sources:
+      - type: release_notes
+        url: "https://docs.vllm.ai/en/latest/models/supported_models.html"
+        captured_date: "2026-04-24"
+    caveats_en: []
+    caveats_zh: []
+
+  - engine: vllm
+    version_spec: ">=0.5.0"
+    matches_model_type: phi3
+    support: full
+    verification_level: cited
+    required_flags: []
+    optional_flags: []
+    sources:
+      - type: release_notes
+        url: "https://docs.vllm.ai/en/latest/models/supported_models.html"
+        captured_date: "2026-04-24"
+    caveats_en: []
+    caveats_zh: []
+
+  - engine: vllm
+    version_spec: ">=0.6.0"
+    matches_model_type: deepseek_v2
+    support: full
+    verification_level: cited
+    required_flags: []
+    optional_flags:
+      - flag: "--trust-remote-code"
+        value: null
+        note_en: "Required for DeepSeek V2 custom modeling code."
+        note_zh: "加载 DeepSeek V2 的自定义建模代码。"
+    sources:
+      - type: release_notes
+        url: "https://docs.vllm.ai/en/latest/models/supported_models.html"
+        captured_date: "2026-04-24"
+    caveats_en: []
+    caveats_zh: []
+
   # ============================================================
   # SGLang
   # ============================================================
@@ -236,6 +360,150 @@ entries:
     verification_level: cited
     required_flags: []
     optional_flags: []
+    sources:
+      - type: release_notes
+        url: "https://github.com/sgl-project/sglang"
+        captured_date: "2026-04-24"
+    caveats_en: []
+    caveats_zh: []
+
+  - engine: sglang
+    version_spec: ">=0.4.0"
+    matches_model_type: qwen2
+    support: full
+    verification_level: cited
+    required_flags: []
+    optional_flags: []
+    sources:
+      - type: release_notes
+        url: "https://docs.sglang.io/basic_usage/popular_model_usage.html"
+        captured_date: "2026-04-24"
+    caveats_en: []
+    caveats_zh: []
+
+  - engine: sglang
+    version_spec: ">=0.4.0"
+    matches_model_type: qwen2_moe
+    support: full
+    verification_level: cited
+    required_flags: []
+    optional_flags: []
+    sources:
+      - type: release_notes
+        url: "https://docs.sglang.io/basic_usage/popular_model_usage.html"
+        captured_date: "2026-04-24"
+    caveats_en: []
+    caveats_zh: []
+
+  - engine: sglang
+    version_spec: ">=0.4.0"
+    matches_model_type: qwen3_moe
+    support: full
+    verification_level: cited
+    required_flags: []
+    optional_flags: []
+    sources:
+      - type: release_notes
+        url: "https://docs.sglang.io/basic_usage/popular_model_usage.html"
+        captured_date: "2026-04-24"
+    caveats_en: []
+    caveats_zh: []
+
+  - engine: sglang
+    version_spec: ">=0.4.0"
+    matches_model_type: mistral
+    support: full
+    verification_level: cited
+    required_flags: []
+    optional_flags: []
+    sources:
+      - type: release_notes
+        url: "https://github.com/sgl-project/sglang"
+        captured_date: "2026-04-24"
+    caveats_en: []
+    caveats_zh: []
+
+  - engine: sglang
+    version_spec: ">=0.4.0"
+    matches_model_type: gemma
+    support: full
+    verification_level: cited
+    required_flags: []
+    optional_flags: []
+    sources:
+      - type: release_notes
+        url: "https://docs.sglang.io/basic_usage/popular_model_usage.html"
+        captured_date: "2026-04-24"
+    caveats_en: []
+    caveats_zh: []
+
+  - engine: sglang
+    version_spec: ">=0.4.0"
+    matches_model_type: gemma2
+    support: full
+    verification_level: cited
+    required_flags: []
+    optional_flags: []
+    sources:
+      - type: release_notes
+        url: "https://docs.sglang.io/basic_usage/popular_model_usage.html"
+        captured_date: "2026-04-24"
+    caveats_en: []
+    caveats_zh: []
+
+  - engine: sglang
+    version_spec: ">=0.5.0"
+    matches_model_type: gemma3
+    support: full
+    verification_level: cited
+    required_flags: []
+    optional_flags: []
+    sources:
+      - type: release_notes
+        url: "https://docs.sglang.io/basic_usage/popular_model_usage.html"
+        captured_date: "2026-04-24"
+    caveats_en: []
+    caveats_zh: []
+
+  - engine: sglang
+    version_spec: ">=0.4.0"
+    matches_model_type: phi
+    support: full
+    verification_level: cited
+    required_flags: []
+    optional_flags: []
+    sources:
+      - type: release_notes
+        url: "https://docs.sglang.io/basic_usage/popular_model_usage.html"
+        captured_date: "2026-04-24"
+    caveats_en: []
+    caveats_zh: []
+
+  - engine: sglang
+    version_spec: ">=0.4.0"
+    matches_model_type: phi3
+    support: full
+    verification_level: cited
+    required_flags: []
+    optional_flags: []
+    sources:
+      - type: release_notes
+        url: "https://docs.sglang.io/basic_usage/popular_model_usage.html"
+        captured_date: "2026-04-24"
+    caveats_en: []
+    caveats_zh: []
+
+  - engine: sglang
+    version_spec: ">=0.4.0"
+    matches_model_type: deepseek_v2
+    support: full
+    verification_level: cited
+    required_flags: []
+    optional_flags:
+      - flag: "--trust-remote-code"
+        value: null
+        note_en: "Required for DeepSeek V2 custom modeling code."
+        note_zh: "加载 DeepSeek V2 的自定义建模代码。"
     sources:
       - type: release_notes
         url: "https://github.com/sgl-project/sglang"
