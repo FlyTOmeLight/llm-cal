@@ -25,6 +25,7 @@ gpus:
     aliases: [B200-SXM, B200-192G]
     memory_gb: 192
     nvlink_bandwidth_gbps: 1800
+    memory_bandwidth_gbps: 8000
     fp16_tflops: 2250
     fp8_support: true
     fp4_support: true
@@ -39,6 +40,7 @@ gpus:
     aliases: [H100-SXM5, H100-80G, H100-SXM]
     memory_gb: 80
     nvlink_bandwidth_gbps: 900
+    memory_bandwidth_gbps: 3350
     fp16_tflops: 989
     fp8_support: true
     fp4_support: false
@@ -50,6 +52,7 @@ gpus:
     aliases: [H800-SXM5, H800-80G]
     memory_gb: 80
     nvlink_bandwidth_gbps: 400
+    memory_bandwidth_gbps: 3350
     fp16_tflops: 989
     fp8_support: true
     fp4_support: false
@@ -61,6 +64,7 @@ gpus:
     aliases: [H200-SXM, H200-141G]
     memory_gb: 141
     nvlink_bandwidth_gbps: 900
+    memory_bandwidth_gbps: 4800
     fp16_tflops: 989
     fp8_support: true
     fp4_support: false
@@ -72,6 +76,7 @@ gpus:
     aliases: [Grace-Hopper, GH200-144G, GH200-96G]
     memory_gb: 144
     nvlink_bandwidth_gbps: 900
+    memory_bandwidth_gbps: 4800
     fp16_tflops: 989
     fp8_support: true
     fp4_support: false
@@ -83,6 +88,7 @@ gpus:
     aliases: [Grace-Blackwell, GB200-per-GPU]
     memory_gb: 192
     nvlink_bandwidth_gbps: 1800
+    memory_bandwidth_gbps: 8000
     fp16_tflops: 2250
     fp8_support: true
     fp4_support: true
@@ -94,6 +100,7 @@ gpus:
     aliases: [H20-96G, H20-SXM]
     memory_gb: 96
     nvlink_bandwidth_gbps: 900
+    memory_bandwidth_gbps: 4000
     fp16_tflops: 148
     fp8_support: true
     fp4_support: false
@@ -108,6 +115,7 @@ gpus:
     aliases: [L40-S, L40S-48G]
     memory_gb: 48
     nvlink_bandwidth_gbps: 0
+    memory_bandwidth_gbps: 864
     fp16_tflops: 362
     fp8_support: true
     fp4_support: false
@@ -119,6 +127,7 @@ gpus:
     aliases: [L40-48G]
     memory_gb: 48
     nvlink_bandwidth_gbps: 0
+    memory_bandwidth_gbps: 864
     fp16_tflops: 181
     fp8_support: true
     fp4_support: false
@@ -130,6 +139,7 @@ gpus:
     aliases: [L4-24G]
     memory_gb: 24
     nvlink_bandwidth_gbps: 0
+    memory_bandwidth_gbps: 300
     fp16_tflops: 121
     fp8_support: true
     fp4_support: false
@@ -141,6 +151,7 @@ gpus:
     aliases: [RTX-6000-Ada, RTX6000Ada, L6000]
     memory_gb: 48
     nvlink_bandwidth_gbps: 0
+    memory_bandwidth_gbps: 960
     fp16_tflops: 365
     fp8_support: true
     fp4_support: false
@@ -152,6 +163,7 @@ gpus:
     aliases: ["4090", RTX-4090]
     memory_gb: 24
     nvlink_bandwidth_gbps: 0
+    memory_bandwidth_gbps: 1008
     fp16_tflops: 165
     fp8_support: true
     fp4_support: false
@@ -166,6 +178,7 @@ gpus:
     aliases: [A100-80, A100-SXM-80G]
     memory_gb: 80
     nvlink_bandwidth_gbps: 600
+    memory_bandwidth_gbps: 2039
     fp16_tflops: 312
     fp8_support: false
     fp4_support: false
@@ -177,6 +190,7 @@ gpus:
     aliases: [A100-40, A100-SXM-40G]
     memory_gb: 40
     nvlink_bandwidth_gbps: 600
+    memory_bandwidth_gbps: 1555
     fp16_tflops: 312
     fp8_support: false
     fp4_support: false
@@ -188,6 +202,7 @@ gpus:
     aliases: [A40-48G]
     memory_gb: 48
     nvlink_bandwidth_gbps: 112
+    memory_bandwidth_gbps: 696
     fp16_tflops: 150
     fp8_support: false
     fp4_support: false
@@ -199,6 +214,7 @@ gpus:
     aliases: [A10-24G]
     memory_gb: 24
     nvlink_bandwidth_gbps: 0
+    memory_bandwidth_gbps: 600
     fp16_tflops: 125
     fp8_support: false
     fp4_support: false
@@ -210,6 +226,7 @@ gpus:
     aliases: [A10G-24G]
     memory_gb: 24
     nvlink_bandwidth_gbps: 0
+    memory_bandwidth_gbps: 600
     fp16_tflops: 125
     fp8_support: false
     fp4_support: false
@@ -224,6 +241,7 @@ gpus:
     aliases: [V100, V100-32G, V100-SXM2]
     memory_gb: 32
     nvlink_bandwidth_gbps: 300
+    memory_bandwidth_gbps: 900
     fp16_tflops: 125
     fp8_support: false
     fp4_support: false
@@ -235,6 +253,7 @@ gpus:
     aliases: [V100-PCIe, V100-PCI]
     memory_gb: 32
     nvlink_bandwidth_gbps: 0
+    memory_bandwidth_gbps: 900
     fp16_tflops: 112
     fp8_support: false
     fp4_support: false
@@ -246,6 +265,7 @@ gpus:
     aliases: [T4-16G]
     memory_gb: 16
     nvlink_bandwidth_gbps: 0
+    memory_bandwidth_gbps: 320
     fp16_tflops: 65
     fp8_support: false
     fp4_support: false
@@ -260,6 +280,7 @@ gpus:
     aliases: [MI325X-256G, AMD-MI325X]
     memory_gb: 256
     nvlink_bandwidth_gbps: 896
+    memory_bandwidth_gbps: 6000
     fp16_tflops: 1307
     fp8_support: true
     fp4_support: false
@@ -271,6 +292,7 @@ gpus:
     aliases: [MI300X-192G, AMD-MI300X]
     memory_gb: 192
     nvlink_bandwidth_gbps: 896
+    memory_bandwidth_gbps: 5300
     fp16_tflops: 1307
     fp8_support: true
     fp4_support: false
@@ -282,6 +304,7 @@ gpus:
     aliases: [MI250X-128G, AMD-MI250X]
     memory_gb: 128
     nvlink_bandwidth_gbps: 800
+    memory_bandwidth_gbps: 3280
     fp16_tflops: 383
     fp8_support: false
     fp4_support: false
@@ -293,6 +316,7 @@ gpus:
     aliases: [MI210-64G, AMD-MI210]
     memory_gb: 64
     nvlink_bandwidth_gbps: 300
+    memory_bandwidth_gbps: 1600
     fp16_tflops: 181
     fp8_support: false
     fp4_support: false
@@ -307,6 +331,7 @@ gpus:
     aliases: [Gaudi-3, Habana-Gaudi3]
     memory_gb: 128
     nvlink_bandwidth_gbps: 1200
+    memory_bandwidth_gbps: 3700
     fp16_tflops: 1835
     fp8_support: true
     fp4_support: false
@@ -318,6 +343,7 @@ gpus:
     aliases: [Gaudi-2, Habana-Gaudi2]
     memory_gb: 96
     nvlink_bandwidth_gbps: 2400
+    memory_bandwidth_gbps: 2450
     fp16_tflops: 432
     fp8_support: true
     fp4_support: false
@@ -335,6 +361,7 @@ gpus:
     aliases: [Ascend-910A]
     memory_gb: 32
     nvlink_bandwidth_gbps: 400
+    memory_bandwidth_gbps: 1200
     fp16_tflops: 256
     fp8_support: false
     fp4_support: false
@@ -346,6 +373,7 @@ gpus:
     aliases: [Ascend-910B1]
     memory_gb: 64
     nvlink_bandwidth_gbps: 400
+    memory_bandwidth_gbps: 1600
     fp16_tflops: 414
     fp8_support: false
     fp4_support: false
@@ -357,6 +385,7 @@ gpus:
     aliases: [Ascend-910B2]
     memory_gb: 64
     nvlink_bandwidth_gbps: 400
+    memory_bandwidth_gbps: 1600
     fp16_tflops: 376
     fp8_support: false
     fp4_support: false
@@ -368,6 +397,7 @@ gpus:
     aliases: [Ascend-910B3, "910B", Ascend-910B]
     memory_gb: 64
     nvlink_bandwidth_gbps: 400
+    memory_bandwidth_gbps: 1600
     fp16_tflops: 313
     fp8_support: false
     fp4_support: false
@@ -379,6 +409,7 @@ gpus:
     aliases: [Ascend-910B4]
     memory_gb: 32
     nvlink_bandwidth_gbps: 400
+    memory_bandwidth_gbps: 1600
     fp16_tflops: 280
     fp8_support: false
     fp4_support: false
@@ -390,6 +421,7 @@ gpus:
     aliases: [Ascend-910C]
     memory_gb: 64
     nvlink_bandwidth_gbps: 400
+    memory_bandwidth_gbps: 3200
     fp16_tflops: 780
     fp8_support: false
     fp4_support: false
@@ -401,6 +433,7 @@ gpus:
     aliases: [Atlas300IDuo, 300I-Duo]
     memory_gb: 48
     nvlink_bandwidth_gbps: 0
+    memory_bandwidth_gbps: 204
     fp16_tflops: 140
     fp8_support: false
     fp4_support: false
@@ -415,6 +448,7 @@ gpus:
     aliases: [MetaX-MXC500, XiYun-C500, 曦云C500]
     memory_gb: 64
     nvlink_bandwidth_gbps: 800
+    memory_bandwidth_gbps: 1800
     fp16_tflops: 240
     fp8_support: false
     fp4_support: false
@@ -426,6 +460,7 @@ gpus:
     aliases: [MetaX-MXC550, XiYun-C550, 曦云C550]
     memory_gb: 64
     nvlink_bandwidth_gbps: 896
+    memory_bandwidth_gbps: 1600
     fp16_tflops: 240
     fp8_support: false
     fp4_support: false
@@ -437,6 +472,7 @@ gpus:
     aliases: [KunlunXin-P800, 昆仑芯P800, Kunlun-Gen3]
     memory_gb: 96
     nvlink_bandwidth_gbps: 400
+    memory_bandwidth_gbps: 2000
     fp16_tflops: 345
     fp8_support: true
     fp4_support: false
@@ -448,6 +484,7 @@ gpus:
     aliases: [KunlunXin-R200, 昆仑芯R200, Kunlun-Gen2]
     memory_gb: 32
     nvlink_bandwidth_gbps: 200
+    memory_bandwidth_gbps: 512
     fp16_tflops: 128
     fp8_support: false
     fp4_support: false
@@ -459,6 +496,7 @@ gpus:
     aliases: [Biren-BR100, 壁仞BR100, 壁砺100]
     memory_gb: 64
     nvlink_bandwidth_gbps: 512
+    memory_bandwidth_gbps: 1640
     fp16_tflops: 1024
     fp8_support: false
     fp4_support: false
@@ -470,6 +508,7 @@ gpus:
     aliases: [Biren-BR104, 壁仞BR104, 壁砺104]
     memory_gb: 32
     nvlink_bandwidth_gbps: 128
+    memory_bandwidth_gbps: 820
     fp16_tflops: 512
     fp8_support: false
     fp4_support: false
@@ -481,6 +520,7 @@ gpus:
     aliases: [Iluvatar-BI-V100, 天数天垓100, TianGai-100]
     memory_gb: 32
     nvlink_bandwidth_gbps: 64
+    memory_bandwidth_gbps: 1200
     fp16_tflops: 147
     fp8_support: false
     fp4_support: false
@@ -492,6 +532,7 @@ gpus:
     aliases: [Iluvatar-MR-V100, 天数智铠100, ZhiKai-100]
     memory_gb: 32
     nvlink_bandwidth_gbps: 0
+    memory_bandwidth_gbps: 1200
     fp16_tflops: 100
     fp8_support: false
     fp4_support: false
@@ -503,6 +544,7 @@ gpus:
     aliases: [Cambricon-MLU370-X8, 寒武纪MLU370-X8, 思元370-X8]
     memory_gb: 48
     nvlink_bandwidth_gbps: 200
+    memory_bandwidth_gbps: 614
     fp16_tflops: 48
     fp8_support: false
     fp4_support: false
@@ -514,6 +556,7 @@ gpus:
     aliases: [Cambricon-MLU590, 寒武纪MLU590, 思元590]
     memory_gb: 80
     nvlink_bandwidth_gbps: 372
+    memory_bandwidth_gbps: 2000
     fp16_tflops: 314
     fp8_support: false
     fp4_support: false
@@ -525,6 +568,7 @@ gpus:
     aliases: [K100-AI, 海光K100AI, DCU-K100-AI]
     memory_gb: 64
     nvlink_bandwidth_gbps: 184
+    memory_bandwidth_gbps: 896
     fp16_tflops: 192
     fp8_support: false
     fp4_support: false
@@ -536,6 +580,7 @@ gpus:
     aliases: [Z100, 海光Z100, DCU-Z100, 深算二号]
     memory_gb: 32
     nvlink_bandwidth_gbps: 184
+    memory_bandwidth_gbps: 1000
     fp16_tflops: 180
     fp8_support: false
     fp4_support: false
@@ -547,6 +592,7 @@ gpus:
     aliases: [MooreThreads-S4000, 摩尔线程S4000, MTT-S4000-48G]
     memory_gb: 48
     nvlink_bandwidth_gbps: 240
+    memory_bandwidth_gbps: 768
     fp16_tflops: 100
     fp8_support: false
     fp4_support: false
@@ -558,6 +604,7 @@ gpus:
     aliases: [MooreThreads-S3000, 摩尔线程S3000]
     memory_gb: 32
     nvlink_bandwidth_gbps: 0
+    memory_bandwidth_gbps: 448
     fp16_tflops: 30
     fp8_support: false
     fp4_support: false

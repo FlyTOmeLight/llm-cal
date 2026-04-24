@@ -19,6 +19,15 @@ from llm_cal.core.cache import ArtifactCache, CacheKey
 from llm_cal.engine_compat.loader import EngineCompatEntry, find_match
 from llm_cal.fleet.planner import FleetRecommendation, plan
 from llm_cal.hardware.loader import GPUSpec, UnknownGPUError, lookup
+from llm_cal.performance.compute import (
+    DEFAULT_DECODE_BW_UTILIZATION,
+    DEFAULT_PREFILL_UTILIZATION,
+    DecodeEstimate,
+    PrefillEstimate,
+    estimate_decode,
+    estimate_prefill,
+)
+from llm_cal.performance.concurrency import ConcurrencyAnalysis, analyze as analyze_concurrency
 from llm_cal.model_source.base import ModelArtifact, ModelSource
 from llm_cal.model_source.huggingface import HuggingFaceSource
 from llm_cal.output.labels import AnnotatedValue
@@ -47,6 +56,13 @@ class EvaluationReport:
     engine_match: EngineCompatEntry | None = None
     fleet: FleetRecommendation | None = None
     generated_command: str | None = None
+    # Performance analysis — filled when user passes SLA args (or defaults).
+    prefill: PrefillEstimate | None = None
+    decode: DecodeEstimate | None = None
+    concurrency: ConcurrencyAnalysis | None = None
+    perf_input_tokens: int | None = None
+    perf_output_tokens: int | None = None
+    perf_target_tokens_per_sec: float | None = None
 
 
 class Evaluator:
@@ -72,6 +88,11 @@ class Evaluator:
         gpu_count: int | None = None,
         context_length: int | None = None,
         refresh: bool = False,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+        target_tokens_per_sec: float | None = None,
+        prefill_utilization: float = DEFAULT_PREFILL_UTILIZATION,
+        decode_bw_utilization: float = DEFAULT_DECODE_BW_UTILIZATION,
     ) -> EvaluationReport:
         artifact = self._fetch(model_id, refresh=refresh)
         profile = detect(artifact.config)
@@ -135,6 +156,76 @@ class Evaluator:
                 max_model_len=context_length,
             )
 
+        # Performance analysis — runs whenever we have hardware + fleet.
+        prefill_est: PrefillEstimate | None = None
+        decode_est: DecodeEstimate | None = None
+        concurrency_est: ConcurrencyAnalysis | None = None
+        if gpu_spec is not None and fleet is not None and total_params > 0:
+            # Pick the fleet tier we're analyzing (user's forced count or best tier).
+            chosen = gpu_count or next(
+                (o.gpu_count for o in fleet.options if o.tier == fleet.best_tier),
+                fleet.options[0].gpu_count,
+            )
+            # Resolve performance defaults when user didn't specify.
+            eff_input = input_tokens or 2000
+            eff_output = output_tokens or 512
+            eff_target = target_tokens_per_sec or 30.0
+
+            prefill_est = estimate_prefill(
+                profile=profile,
+                total_params=total_params,
+                gpu=gpu_spec,
+                num_gpus=chosen,
+                input_tokens=eff_input,
+                utilization=prefill_utilization,
+            )
+            # MoE active ratio: active/total = (shared + experts_per_tok) / (shared + routed)
+            moe_active_ratio: float | None = None
+            if profile.moe is not None:
+                active_experts = profile.moe.num_experts_per_tok + profile.moe.num_shared_experts
+                total_experts = profile.moe.num_routed_experts + profile.moe.num_shared_experts
+                if total_experts > 0:
+                    moe_active_ratio = active_experts / total_experts
+            decode_est = estimate_decode(
+                profile=profile,
+                total_weight_bytes=weight.total_bytes.value,
+                gpu=gpu_spec,
+                num_gpus=chosen,
+                bw_utilization=decode_bw_utilization,
+                moe_active_params_ratio=moe_active_ratio,
+            )
+            # Compute cluster headroom at the chosen tier + KV per request at the
+            # *longest* surveyed context (most conservative).
+            chosen_option = next(
+                (o for o in fleet.options if o.gpu_count == chosen),
+                fleet.options[-1],
+            )
+            headroom_per_gpu = (
+                chosen_option.usable_bytes_per_gpu - chosen_option.weight_bytes_per_gpu
+            )
+            cluster_headroom = max(0, headroom_per_gpu) * chosen
+            # Reference context for the L bound: match K's headroom context (128K
+            # if model supports it, else max).
+            kv_ref_ctx = 131_072 if 131_072 in kv_by_ctx else max(kv_by_ctx.keys())
+            kv_ref_bytes: int = kv_by_ctx[kv_ref_ctx].value
+            # Apply TP-aware sharding (same rule fleet planner uses).
+            from llm_cal.fleet.planner import _kv_shards
+
+            shards = _kv_shards(profile, chosen)
+            kv_ref_per_gpu = max(1, kv_ref_bytes // shards)
+            # Request KV lives per-GPU; under replication, it's the same value on all.
+            # We compare cluster headroom against per-GPU KV (each request consumes
+            # per-GPU KV on every rank simultaneously).
+            # To convert to "how many requests fit", we divide *per-GPU* headroom
+            # by *per-GPU* KV.
+            headroom_per_req_view = max(0, headroom_per_gpu)
+            concurrency_est = analyze_concurrency(
+                cluster_headroom_bytes=headroom_per_req_view,
+                kv_bytes_per_request=kv_ref_per_gpu,
+                decode=decode_est,
+                target_tokens_per_sec=eff_target,
+            )
+
         return EvaluationReport(
             model_id=model_id,
             source=artifact.source,
@@ -151,6 +242,12 @@ class Evaluator:
             engine_match=engine_match,
             fleet=fleet,
             generated_command=generated_command,
+            prefill=prefill_est,
+            decode=decode_est,
+            concurrency=concurrency_est,
+            perf_input_tokens=input_tokens or 2000 if fleet else None,
+            perf_output_tokens=output_tokens or 512 if fleet else None,
+            perf_target_tokens_per_sec=target_tokens_per_sec or 30.0 if fleet else None,
         )
 
     def _fetch(self, model_id: str, refresh: bool) -> ModelArtifact:

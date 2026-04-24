@@ -73,6 +73,7 @@ def render(report: EvaluationReport, console: Console | None = None) -> None:
     _render_engine_compat(report, console)
     _render_hardware(report, console)
     _render_fleet(report, console)
+    _render_performance(report, console)
     _render_command(report, console)
     _render_label_legend(console)
 
@@ -384,6 +385,101 @@ def _fmt_ctx(ctx_tokens: int) -> str:
     return str(ctx_tokens)
 
 
+def _render_performance(report: EvaluationReport, console: Console) -> None:
+    if (
+        report.prefill is None
+        or report.decode is None
+        or report.concurrency is None
+        or report.perf_input_tokens is None
+        or report.perf_target_tokens_per_sec is None
+    ):
+        return
+
+    console.print()
+    # Assumption banner — surfaces the utilization factors and SLA.
+    assumptions = t(
+        "perf.assumptions_note",
+        input_tokens=report.perf_input_tokens,
+        output_tokens=report.perf_output_tokens,
+        target_tps=report.perf_target_tokens_per_sec,
+        prefill_util=report.prefill.utilization,
+        decode_util=report.decode.bw_utilization,
+    )
+    console.print(f"[dim italic]{assumptions}[/dim italic]")
+
+    table = Table(
+        title=t("section.performance"),
+        title_justify="left",
+        show_header=False,
+        box=None,
+        padding=(0, 2),
+    )
+    table.add_column("field", style="dim")
+    table.add_column("value")
+    table.add_column("label")
+
+    p = report.prefill
+    d = report.decode
+    c = report.concurrency
+
+    table.add_row(
+        t("perf.prefill_latency"),
+        f"{p.latency_ms.value:.1f} ms",
+        format_tag(p.latency_ms),
+    )
+    table.add_row(
+        t("perf.decode_throughput_per_gpu"),
+        f"{d.per_gpu_tokens_per_sec.value:.1f} tok/s",
+        format_tag(d.per_gpu_tokens_per_sec),
+    )
+    table.add_row(
+        t("perf.decode_throughput_cluster"),
+        f"{d.cluster_tokens_per_sec.value:.1f} tok/s",
+        format_tag(d.cluster_tokens_per_sec),
+    )
+    if d.moe_active_tokens_per_sec is not None:
+        table.add_row(
+            t("perf.decode_moe_active_optimistic"),
+            f"{d.moe_active_tokens_per_sec.value:.1f} tok/s",
+            format_tag(d.moe_active_tokens_per_sec),
+        )
+    table.add_row(
+        t("perf.k_bound"),
+        str(c.k_bound.value),
+        format_tag(c.k_bound),
+    )
+    table.add_row(
+        t("perf.l_bound"),
+        str(c.l_bound.value),
+        format_tag(c.l_bound),
+    )
+    table.add_row(
+        t("perf.max_concurrent"),
+        str(c.max_concurrent.value),
+        format_tag(c.max_concurrent),
+    )
+    bottleneck_label = t(f"perf.bottleneck.{c.bottleneck}")
+    locale = get_locale()
+    reason = c.bottleneck_reason_zh if locale == "zh" else c.bottleneck_reason_en
+    table.add_row(
+        t("perf.bottleneck"),
+        f"{bottleneck_label} — {reason}",
+        Text(""),
+    )
+    console.print(table)
+
+    # Always show a short optimization list. Rules are currently static but
+    # future versions can pick per bottleneck type.
+    console.print(f"[bold]{t('perf.optimization.header')}:[/bold]")
+    for key in (
+        "perf.opt.quantize_int4",
+        "perf.opt.relax_sla",
+        "perf.opt.kv_fp8",
+        "perf.opt.moe_offload",
+    ):
+        console.print(f"  • {t(key)}")
+
+
 def _render_command(report: EvaluationReport, console: Console) -> None:
     if not report.generated_command or report.fleet is None:
         return
@@ -467,9 +563,7 @@ def _verif_label(entry: EngineCompatEntry) -> Text:
         "cited": Label.CITED,
         "unverified": Label.UNVERIFIED,
     }.get(entry.verification_level, Label.UNKNOWN)
-    return Text(
-        f"[{t(f'label.{label.value}')}]", style=_LABEL_STYLES.get(label, "white")
-    )
+    return Text(f"[{t(f'label.{label.value}')}]", style=_LABEL_STYLES.get(label, "white"))
 
 
 def _fmt_flag(f: EngineFlag) -> str:

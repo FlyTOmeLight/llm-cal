@@ -19,6 +19,11 @@ class GPUSpec(BaseModel):
     aliases: list[str] = Field(default_factory=list)
     memory_gb: int
     nvlink_bandwidth_gbps: int
+    # HBM/GDDR memory bandwidth (NOT NVLink). This is the critical number for
+    # decode throughput: decode is memory-bandwidth-bound, and per-token
+    # latency = active_weight_bytes / (memory_bandwidth × utilization).
+    # 0 or None means unknown (performance module will skip bandwidth checks).
+    memory_bandwidth_gbps: int | None = None
     fp16_tflops: float
     fp8_support: bool
     fp4_support: bool

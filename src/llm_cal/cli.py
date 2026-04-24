@@ -61,6 +61,31 @@ def main(
             "Requires network. Exit 0 on all-pass, 1 if any FAIL."
         ),
     ),
+    input_tokens: int = typer.Option(
+        2000,
+        "--input-tokens",
+        help="Input token budget for prefill-latency estimation (default: 2000).",
+    ),
+    output_tokens: int = typer.Option(
+        512,
+        "--output-tokens",
+        help="Output token budget for total-latency math (default: 512).",
+    ),
+    target_tokens_per_sec: float = typer.Option(
+        30.0,
+        "--target-tokens-per-sec",
+        help="SLA: per-user decode tokens/second (drives L bound). Default: 30.",
+    ),
+    prefill_util: float = typer.Option(
+        0.40,
+        "--prefill-util",
+        help="Compute utilization factor for prefill (empirical, default 0.40).",
+    ),
+    decode_bw_util: float = typer.Option(
+        0.50,
+        "--decode-bw-util",
+        help="Memory-bandwidth utilization factor for decode (default 0.50).",
+    ),
 ) -> None:
     """Evaluate a model against target hardware."""
     if lang in ("en", "zh"):
@@ -92,6 +117,11 @@ def main(
             gpu_count=gpu_count,
             context_length=context_length,
             refresh=refresh,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            target_tokens_per_sec=target_tokens_per_sec,
+            prefill_utilization=prefill_util,
+            decode_bw_utilization=decode_bw_util,
         )
     except AuthRequiredError as e:
         _err.print(f"[bold red]{t('cli.err.auth_required')}[/bold red] {e}")

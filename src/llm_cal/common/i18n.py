@@ -239,6 +239,93 @@ _MESSAGES: dict[str, dict[Locale, str]] = {
         "en": "tier: {tier} ({gpus} GPUs)",
         "zh": "档位：{tier}（{gpus} 张）",
     },
+    # Performance section
+    "section.performance": {
+        "en": "Performance analysis",
+        "zh": "性能分析",
+    },
+    "perf.assumptions_note": {
+        "en": (
+            "Assumes input={input_tokens} tokens, output={output_tokens} tokens, "
+            "target {target_tps} tok/s per user. "
+            "Utilization: prefill={prefill_util:.0%} / decode_bw={decode_util:.0%}. "
+            "All numbers are [estimated] — override via --prefill-util / --decode-bw-util."
+        ),
+        "zh": (
+            "假设输入 {input_tokens} tokens、输出 {output_tokens} tokens、"
+            "每用户目标 {target_tps} tok/s。"
+            "利用率：prefill={prefill_util:.0%} / decode_bw={decode_util:.0%}。"
+            "所有数字都是 [estimated]——可通过 --prefill-util / --decode-bw-util 覆盖。"
+        ),
+    },
+    "perf.prefill_latency": {
+        "en": "Prefill latency (single request)",
+        "zh": "Prefill 延迟（单请求）",
+    },
+    "perf.decode_throughput_cluster": {
+        "en": "Decode throughput (cluster)",
+        "zh": "Decode 吞吐（集群）",
+    },
+    "perf.decode_throughput_per_gpu": {
+        "en": "Decode throughput (per GPU)",
+        "zh": "Decode 吞吐（单卡）",
+    },
+    "perf.decode_moe_active_optimistic": {
+        "en": "Decode throughput (MoE active-only, optimistic)",
+        "zh": "Decode 吞吐（MoE 仅激活专家，乐观估算）",
+    },
+    "perf.k_bound": {
+        "en": "K bound (memory-capacity)",
+        "zh": "K 上限（显存容量）",
+    },
+    "perf.l_bound": {
+        "en": "L bound (compute / bandwidth @ SLA)",
+        "zh": "L 上限（算力/带宽 @ SLA）",
+    },
+    "perf.max_concurrent": {
+        "en": "Max concurrent",
+        "zh": "最大并发",
+    },
+    "perf.bottleneck": {
+        "en": "Bottleneck",
+        "zh": "瓶颈类型",
+    },
+    "perf.bottleneck.memory_capacity": {
+        "en": "Memory capacity",
+        "zh": "显存容量",
+    },
+    "perf.bottleneck.memory_bandwidth": {
+        "en": "Memory bandwidth / compute",
+        "zh": "显存带宽 / 算力",
+    },
+    "perf.bottleneck.compute": {
+        "en": "Compute",
+        "zh": "算力",
+    },
+    "perf.bottleneck.insufficient_data": {
+        "en": "Insufficient data",
+        "zh": "数据不足",
+    },
+    "perf.optimization.header": {
+        "en": "Optimization suggestions",
+        "zh": "优化建议",
+    },
+    "perf.opt.quantize_int4": {
+        "en": "Quantize to INT4: weight bytes halve → decode tok/s roughly 2× → concurrency scales accordingly.",
+        "zh": "量化到 INT4：权重字节减半 → decode tok/s 约翻倍 → 并发能力随之提升。",
+    },
+    "perf.opt.relax_sla": {
+        "en": "Relax SLA: if per-user target drops to 15 tok/s, L bound roughly doubles.",
+        "zh": "放宽 SLA：若每用户目标降至 15 tok/s，L 上限约翻倍。",
+    },
+    "perf.opt.kv_fp8": {
+        "en": "KV cache FP8 quantization: halves per-request KV, doubles the K bound at long context.",
+        "zh": "KV cache 量化到 FP8：单请求 KV 减半，长上下文下 K 上限约翻倍。",
+    },
+    "perf.opt.moe_offload": {
+        "en": "MoE expert offload to CPU: frees HBM for more KV cache at the cost of PCIe latency per new expert.",
+        "zh": "MoE 专家卸载到 CPU：释放 HBM 给 KV cache，代价是新专家激活时的 PCIe 延迟。",
+    },
 }
 
 
