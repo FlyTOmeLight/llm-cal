@@ -27,6 +27,7 @@ _LABEL_STYLES: dict[Label, str] = {
     Label.CITED: "blue",
     Label.UNVERIFIED: "bold yellow",
     Label.UNKNOWN: "dim red",
+    Label.LLM_OPINION: "magenta",
 }
 
 
@@ -515,6 +516,35 @@ def _render_label_legend(console: Console) -> None:
 
 def _verified_tag() -> Text:
     return Text(f"[{t('label.verified')}]", style=_LABEL_STYLES[Label.VERIFIED])
+
+
+def render_llm_review(result: Any, console: Console | None = None) -> None:
+    """Render --llm-review block. Accepts an LLMReviewResult.
+
+    Failure is non-fatal — shows setup hint and continues.
+    """
+    console = console or Console()
+    console.print()
+    console.print(Panel.fit(t("section.llm_review"), border_style="magenta"))
+
+    if not result.ok:
+        msg = t("llm_review.unavailable", error=result.error or "unknown")
+        console.print(f"[yellow]{msg}[/yellow]")
+        console.print(f"[dim]{t('llm_review.setup_hint')}[/dim]")
+        return
+
+    # Disclaimer first — make it visually distinctive so users don't confuse
+    # LLM opinion with the tool's own output.
+    disclaimer = t("llm_review.disclaimer", model=result.model, base_url=result.base_url)
+    console.print(f"[bold yellow]{disclaimer}[/bold yellow]")
+    console.print()
+    # The actual review, prefixed with the [llm-opinion] tag so users see
+    # it's tagged too.
+    tag_style = _LABEL_STYLES[Label.LLM_OPINION]
+    tag_display = t(f"label.{Label.LLM_OPINION.value}")
+    console.print(f"[{tag_style}][{tag_display}][/{tag_style}]")
+    # Print content verbatim (LLM output is markdown-ish; let it through).
+    console.print(result.content or "")
 
 
 def render_explain(entries: list[Any], console: Console | None = None) -> None:

@@ -188,6 +188,7 @@ _MESSAGES: dict[str, dict[Locale, str]] = {
     "label.cited": {"en": "cited", "zh": "引用"},
     "label.unverified": {"en": "unverified", "zh": "未经验证"},
     "label.unknown": {"en": "unknown", "zh": "未知"},
+    "label.llm-opinion": {"en": "llm-opinion", "zh": "LLM 观点"},
     # Source attribution
     "source.pr": {"en": "PR", "zh": "PR"},
     "source.release_notes": {"en": "release notes", "zh": "release note"},
@@ -352,6 +353,37 @@ _MESSAGES: dict[str, dict[Locale, str]] = {
             "下面每一项都给出所用公式、输入、每一步计算、主要来源。"
             "把任一项复制粘贴给 LLM，问『这个推理对吗』即可。"
             "工具保持确定性，second opinion 交给你。"
+        ),
+    },
+    # LLM review section
+    "section.llm_review": {
+        "en": "LLM second opinion (--llm-review, EXPERIMENTAL)",
+        "zh": "LLM 审阅（--llm-review，实验性）",
+    },
+    "llm_review.disclaimer": {
+        "en": (
+            "⚠  This is a second opinion from an external LLM ({model} via {base_url}). "
+            "It is tagged [llm-opinion] and NEVER overrides the 6 primary labels. "
+            "LLMs can be wrong; the tool's deterministic output takes precedence."
+        ),
+        "zh": (
+            "⚠  以下是来自外部 LLM（{model}，经 {base_url}）的第二意见。"
+            "标签为 [LLM 观点]，**永远不覆盖** 前 6 级主标签。"
+            "LLM 可能出错；工具的确定性输出优先。"
+        ),
+    },
+    "llm_review.unavailable": {
+        "en": "LLM review unavailable: {error}",
+        "zh": "LLM 审阅不可用：{error}",
+    },
+    "llm_review.setup_hint": {
+        "en": (
+            "To enable: export LLM_CAL_REVIEWER_API_KEY=<key>  "
+            "[optional: LLM_CAL_REVIEWER_BASE_URL, LLM_CAL_REVIEWER_MODEL]"
+        ),
+        "zh": (
+            "启用方法：export LLM_CAL_REVIEWER_API_KEY=<key>  "
+            "[可选：LLM_CAL_REVIEWER_BASE_URL、LLM_CAL_REVIEWER_MODEL]"
         ),
     },
 }

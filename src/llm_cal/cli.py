@@ -8,16 +8,22 @@ import typer
 from rich.console import Console
 
 from llm_cal.benchmark.runner import exit_code_from, render_results, run_all
-from llm_cal.common.i18n import detect_locale_from_env, set_locale, t
+from llm_cal.common.i18n import detect_locale_from_env, get_locale, set_locale, t
 from llm_cal.core.evaluator import Evaluator
 from llm_cal.core.explain import build as build_explain
 from llm_cal.hardware.loader import load_database
+from llm_cal.llm_review.reviewer import run_review
 from llm_cal.model_source.base import (
     AuthRequiredError,
     ModelNotFoundError,
     SourceUnavailableError,
 )
-from llm_cal.output.formatter import render, render_explain, render_gpu_list
+from llm_cal.output.formatter import (
+    render,
+    render_explain,
+    render_gpu_list,
+    render_llm_review,
+)
 
 # Set locale from env first; --lang flag can override inside main()
 set_locale(detect_locale_from_env())
@@ -105,6 +111,17 @@ def main(
             "if you want a second opinion on the math."
         ),
     ),
+    llm_review: bool = typer.Option(
+        False,
+        "--llm-review",
+        help=(
+            "EXPERIMENTAL: send the derivation trace to an LLM for a second "
+            "opinion. Output is tagged [llm-opinion] and never overrides the "
+            "6 primary labels. Requires env vars: LLM_CAL_REVIEWER_API_KEY "
+            "(required), LLM_CAL_REVIEWER_BASE_URL (default OpenAI), "
+            "LLM_CAL_REVIEWER_MODEL (default gpt-4o)."
+        ),
+    ),
 ) -> None:
     """Evaluate a model against target hardware."""
     if lang in ("en", "zh"):
@@ -154,8 +171,13 @@ def main(
         sys.exit(4)
 
     render(report, _console)
+    explain_entries = build_explain(report) if (explain or llm_review) else []
     if explain:
-        render_explain(build_explain(report), _console)
+        render_explain(explain_entries, _console)
+    if llm_review:
+        # Locale at this point has been resolved by set_locale() calls above.
+        result = run_review(explain_entries, locale=get_locale())
+        render_llm_review(result, _console)
 
 
 if __name__ == "__main__":

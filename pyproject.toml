@@ -111,7 +111,9 @@ ignore = [
 "src/llm_cal/performance/concurrency.py" = ["RUF001", "RUF002", "RUF003"]
 "src/llm_cal/hardware/loader.py" = ["RUF001", "RUF002", "RUF003"]
 "src/llm_cal/core/explain.py" = ["RUF001", "RUF002", "RUF003"]
+"src/llm_cal/llm_review/reviewer.py" = ["RUF001", "RUF002", "RUF003"]
 "tests/test_i18n.py" = ["B", "N", "RUF001", "RUF002", "RUF003"]
+"tests/test_llm_review.py" = ["B", "N", "RUF001", "RUF002", "RUF003"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

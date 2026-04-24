@@ -19,6 +19,9 @@ class Label(StrEnum):
     CITED = "cited"
     UNVERIFIED = "unverified"
     UNKNOWN = "unknown"
+    # Experimental opt-in 7th level. Populated only when --llm-review is used.
+    # Never overrides the first 6 — it's an external second opinion, not truth.
+    LLM_OPINION = "llm-opinion"
 
 
 T = TypeVar("T")
