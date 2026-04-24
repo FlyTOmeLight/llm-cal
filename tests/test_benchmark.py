@@ -202,12 +202,22 @@ class TestExitCode:
 
 
 def test_benchmark_flag_in_cli_help():
-    """Smoke: --benchmark flag is exposed in the CLI."""
+    """Smoke: --benchmark flag is exposed in the CLI.
+
+    Use wide terminal + check for 'benchmark' substring (unique in help text)
+    because CI terminals are narrow and typer may wrap the flag name.
+    """
+    import os
+
     from typer.testing import CliRunner
 
     from llm_cal.cli import app
 
     runner = CliRunner()
-    result = runner.invoke(app, ["--help"])
+    # Force wide output so typer doesn't wrap `--benchmark` mid-word in CI.
+    env = {**os.environ, "COLUMNS": "200", "TERM": "xterm-256color"}
+    result = runner.invoke(app, ["--help"], env=env)
     assert result.exit_code == 0
-    assert "--benchmark" in result.stdout
+    # "benchmark" is in the help text uniquely (no other CLI flag contains it),
+    # so substring match survives any wrapping / ANSI bytes.
+    assert "benchmark" in result.stdout.lower()
