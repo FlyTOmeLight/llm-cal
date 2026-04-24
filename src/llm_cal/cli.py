@@ -9,12 +9,13 @@ from rich.console import Console
 
 from llm_cal.common.i18n import detect_locale_from_env, set_locale, t
 from llm_cal.core.evaluator import Evaluator
+from llm_cal.hardware.loader import load_database
 from llm_cal.model_source.base import (
     AuthRequiredError,
     ModelNotFoundError,
     SourceUnavailableError,
 )
-from llm_cal.output.formatter import render
+from llm_cal.output.formatter import render, render_gpu_list
 
 # Set locale from env first; --lang flag can override inside main()
 set_locale(detect_locale_from_env())
@@ -30,8 +31,8 @@ _err = Console(stderr=True)
 
 @app.command()
 def main(
-    model_id: str = typer.Argument(..., help="HuggingFace or ModelScope model id"),
-    gpu: str = typer.Option(..., "--gpu", help="GPU type, e.g. H800, A100-80G"),
+    model_id: str | None = typer.Argument(None, help="HuggingFace or ModelScope model id"),
+    gpu: str | None = typer.Option(None, "--gpu", help="GPU type, e.g. H800, A100-80G"),
     engine: str = typer.Option("vllm", "--engine", help="Inference engine: vllm | sglang"),
     gpu_count: int | None = typer.Option(
         None, "--gpu-count", help="Force GPU count (otherwise tool recommends)"
@@ -45,10 +46,27 @@ def main(
         "--lang",
         help="Output language: en | zh (default auto-detects from LANG env)",
     ),
+    list_gpus: bool = typer.Option(
+        False,
+        "--list-gpus",
+        help="List all supported GPUs and exit (no model_id needed)",
+    ),
 ) -> None:
     """Evaluate a model against target hardware."""
     if lang in ("en", "zh"):
         set_locale(lang)  # type: ignore[arg-type]
+
+    # Meta commands short-circuit before requiring model_id + --gpu.
+    if list_gpus:
+        render_gpu_list(load_database(), _console)
+        return
+
+    if not model_id:
+        _err.print("[red]Missing argument MODEL_ID. Use --help for usage.[/red]")
+        raise typer.Exit(code=1)
+    if not gpu:
+        _err.print("[red]Missing option --gpu. Use --list-gpus to see choices.[/red]")
+        raise typer.Exit(code=1)
 
     evaluator = Evaluator()
     try:

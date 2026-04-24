@@ -58,6 +58,15 @@ def test_database_loads_and_has_all_expected_gpus():
         "BR100",
         "BR104",
         "BI-V100",
+        "MR-V100",
+        "MLU370-X8",
+        "MTT-S4000",
+        "MTT-S3000",
+        # More international
+        "GH200",
+        "MI325X",
+        "MI210",
+        "V100-PCIe-32G",
     }
     assert expected <= ids, f"missing: {expected - ids}"
 
@@ -97,6 +106,39 @@ def test_chinese_name_aliases_resolve():
     assert lookup("昆仑芯P800").id == "Kunlun-P800"
     assert lookup("壁仞BR100").id == "BR100"
     assert lookup("天数天垓100").id == "BI-V100"
+    assert lookup("天数智铠100").id == "MR-V100"
+    assert lookup("寒武纪MLU370-X8").id == "MLU370-X8"
+    assert lookup("摩尔线程S4000").id == "MTT-S4000"
+
+
+def test_gh200_hopper_plus_grace():
+    """GH200 has 144 GB HBM3e (unique superchip design)."""
+    spec = lookup("GH200")
+    assert spec.memory_gb == 144
+    assert spec.fp8_support is True
+    assert spec.fp4_support is False
+
+
+def test_mi210_no_fp8():
+    """MI210 is CDNA 2 — no native FP8 support."""
+    spec = lookup("MI210")
+    assert spec.fp8_support is False
+    assert spec.memory_gb == 64
+
+
+def test_list_gpus_subcommand():
+    """CLI --list-gpus should run without requiring model_id/gpu."""
+    from typer.testing import CliRunner
+
+    from llm_cal.cli import app
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["--list-gpus"])
+    assert result.exit_code == 0
+    assert "H100" in result.stdout
+    assert "MI325X" in result.stdout
+    # Should mention total count (text differs by locale; check both)
+    assert "Total" in result.stdout or "共 " in result.stdout
 
 
 def test_every_gpu_has_spec_source():
@@ -122,11 +164,12 @@ def test_h20_recognized():
     assert spec.fp16_tflops < 200  # Heavily throttled vs H100's 989
 
 
-def test_mi300x_is_biggest_single_card():
-    """MI300X has the largest single-card memory in v0.1 database."""
+def test_mi325x_is_biggest_single_card():
+    """MI325X (256 GB) is the largest single-card memory in v0.1 database."""
     db = load_database()
     largest = max(db.gpus, key=lambda g: g.memory_gb)
-    assert largest.id in ("MI300X", "B200")  # Both 192 GB
+    assert largest.id == "MI325X"
+    assert largest.memory_gb == 256
 
 
 def test_t4_has_no_fp8_no_nvlink():

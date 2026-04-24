@@ -17,6 +17,7 @@ from llm_cal.common.i18n import get_locale, t
 from llm_cal.core.evaluator import EvaluationReport
 from llm_cal.engine_compat.loader import EngineCompatEntry, EngineFlag, EngineSource
 from llm_cal.fleet.planner import FleetRecommendation
+from llm_cal.hardware.loader import GPUDatabase
 from llm_cal.output.labels import AnnotatedValue, Label
 
 _LABEL_STYLES: dict[Label, str] = {
@@ -413,6 +414,48 @@ def _render_label_legend(console: Console) -> None:
 
 def _verified_tag() -> Text:
     return Text(f"[{Label.VERIFIED.value}]", style=_LABEL_STYLES[Label.VERIFIED])
+
+
+def render_gpu_list(db: GPUDatabase, console: Console | None = None) -> None:
+    """Print the supported-GPU table. Invoked by `llm-cal --list-gpus`."""
+    console = console or Console()
+    locale = get_locale()
+
+    table = Table(
+        title=t("gpus.list.title"),
+        title_justify="left",
+        show_header=True,
+        header_style="dim",
+        box=None,
+        padding=(0, 2),
+    )
+    table.add_column(t("gpus.col.id"))
+    table.add_column(t("gpus.col.memory"), justify="right")
+    table.add_column(t("gpus.col.nvlink"), justify="right")
+    table.add_column(t("gpus.col.fp16"), justify="right")
+    table.add_column(t("gpus.col.fp8"), justify="center")
+    table.add_column(t("gpus.col.fp4"), justify="center")
+    table.add_column(t("gpus.col.aliases"))
+
+    yes = t("hw.bool_yes")
+    no = t("hw.bool_no")
+
+    # Preserve YAML insertion order (vendors are grouped there).
+    for spec in db.gpus:
+        aliases_str = ", ".join(spec.aliases) if spec.aliases else "—"
+        nvlink_str = f"{spec.nvlink_bandwidth_gbps} GB/s" if spec.nvlink_bandwidth_gbps else "—"
+        table.add_row(
+            spec.id,
+            f"{spec.memory_gb} GB",
+            nvlink_str,
+            f"{spec.fp16_tflops:.0f}",
+            yes if spec.fp8_support else no,
+            yes if spec.fp4_support else no,
+            aliases_str,
+        )
+    console.print(table)
+    console.print(f"[dim]{t('gpus.total', count=len(db.gpus))}[/dim]")
+    _ = locale  # suppress unused var warn until we add locale-dependent notes column
 
 
 def _verif_label(entry: EngineCompatEntry) -> Text:

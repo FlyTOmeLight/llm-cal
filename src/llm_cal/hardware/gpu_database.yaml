@@ -68,6 +68,17 @@ gpus:
     notes_en: "Hopper with HBM3e. 141 GB per GPU."
     notes_zh: "搭载 HBM3e 的 Hopper，单卡 141 GB。"
 
+  - id: GH200
+    aliases: [Grace-Hopper, GH200-144G, GH200-96G]
+    memory_gb: 144
+    nvlink_bandwidth_gbps: 900
+    fp16_tflops: 989
+    fp8_support: true
+    fp4_support: false
+    spec_source: "NVIDIA GH200 Grace Hopper datasheet 2023 (144GB HBM3e variant, dense FP16=989 TFLOPS; sparsity doubles it)"
+    notes_en: "Grace Hopper superchip — Hopper GPU + Grace CPU on one module. 144 GB HBM3e (96 GB HBM3 variant also exists). NVLink-C2C 900 GB/s CPU<->GPU unified. TDP programmable 450-1000W. Ideal for models that spill beyond single GPU memory because GPU can access CPU LPDDR coherently."
+    notes_zh: "Grace Hopper 超级芯片 — Hopper GPU + Grace CPU 融合模组。144 GB HBM3e（另有 96 GB HBM3 版本）。NVLink-C2C 让 CPU/GPU 共享统一内存空间，900 GB/s 双向。TDP 可编程 450-1000W。模型单卡显存装不下时，可一致地访问 CPU 的 LPDDR。"
+
   - id: H20
     aliases: [H20-96G, H20-SXM]
     memory_gb: 96
@@ -209,6 +220,17 @@ gpus:
     notes_en: "Volta. No FP8. Still deployed in many existing clusters — works for smaller models, tight for 70B+."
     notes_zh: "Volta 架构。不支持 FP8，但仍在大量老集群中服役。小模型够用，70B+ 紧张。"
 
+  - id: V100-PCIe-32G
+    aliases: [V100-PCIe, V100-PCI]
+    memory_gb: 32
+    nvlink_bandwidth_gbps: 0
+    fp16_tflops: 112
+    fp8_support: false
+    fp4_support: false
+    spec_source: "NVIDIA V100 PCIe datasheet 2017 — PCIe variant of V100, no NVLink."
+    notes_en: "PCIe version of V100. No NVLink, lower clocks than SXM2. Common in older servers."
+    notes_zh: "V100 的 PCIe 版本，无 NVLink，主频稍低。老服务器常见配置。"
+
   - id: T4
     aliases: [T4-16G]
     memory_gb: 16
@@ -223,6 +245,17 @@ gpus:
   # ========================================================================
   # AMD (ROCm, xGMI instead of NVLink)
   # ========================================================================
+  - id: MI325X
+    aliases: [MI325X-256G, AMD-MI325X]
+    memory_gb: 256
+    nvlink_bandwidth_gbps: 896
+    fp16_tflops: 1307
+    fp8_support: true
+    fp4_support: false
+    spec_source: "AMD Instinct MI325X datasheet 2024 — 256 GB HBM3E, 6 TB/s bandwidth, 1000W TDP, CDNA 3."
+    notes_en: "AMD flagship 2024. 256 GB HBM3E (largest single-card memory in v0.1 database). Upgraded MI300X with faster HBM3E and more capacity. Dense FP16 1307 TFLOPS, FP8 2615 TFLOPS. 1000W TDP, OAM format. ROCm software stack."
+    notes_zh: "AMD 2024 年旗舰。256 GB HBM3E（v0.1 数据库中单卡最大）。MI300X 升级版，HBM3E 更快、容量更大。Dense FP16 1307 TFLOPS，FP8 2615 TFLOPS。1000W TDP，OAM 形态。需要 ROCm 软件栈。"
+
   - id: MI300X
     aliases: [MI300X-192G, AMD-MI300X]
     memory_gb: 192
@@ -231,8 +264,8 @@ gpus:
     fp8_support: true
     fp4_support: false
     spec_source: "AMD Instinct MI300X datasheet 2023-12"
-    notes_en: "AMD flagship. 192 GB HBM3 (largest single-card memory). xGMI 896 GB/s (like NVLink). Software stack: ROCm + vLLM. Support for DeepSeek V4 etc. lags Nvidia by weeks."
-    notes_zh: "AMD 旗舰卡。192 GB HBM3（单卡最大显存）。xGMI 互联 896 GB/s（类 NVLink）。需要 ROCm + vLLM 栈。新模型支持通常比 NVIDIA 晚几周。"
+    notes_en: "AMD flagship 2023. 192 GB HBM3. xGMI 896 GB/s (like NVLink). Software stack: ROCm + vLLM. Support for DeepSeek V4 etc. lags Nvidia by weeks."
+    notes_zh: "AMD 2023 年旗舰。192 GB HBM3。xGMI 互联 896 GB/s（类 NVLink）。需要 ROCm + vLLM 栈。新模型支持通常比 NVIDIA 晚几周。"
 
   - id: MI250X
     aliases: [MI250X-128G, AMD-MI250X]
@@ -244,6 +277,17 @@ gpus:
     spec_source: "AMD Instinct MI250X datasheet 2022"
     notes_en: "AMD previous-gen. 128 GB HBM2e. No FP8. Deployed in some HPC clusters (Frontier)."
     notes_zh: "AMD 上代数据中心卡。128 GB HBM2e，不支持 FP8。少数 HPC 集群（如 Frontier 超算）有部署。"
+
+  - id: MI210
+    aliases: [MI210-64G, AMD-MI210]
+    memory_gb: 64
+    nvlink_bandwidth_gbps: 300
+    fp16_tflops: 181
+    fp8_support: false
+    fp4_support: false
+    spec_source: "AMD Instinct MI210 datasheet 2022 — CDNA 2, single-die version of MI250. 64 GB HBM2e."
+    notes_en: "AMD CDNA 2 single-die. 64 GB HBM2e, 1.6 TB/s. No FP8 (CDNA 2 limitation). Common as entry-level AMD datacenter card."
+    notes_zh: "AMD CDNA 2 单 die 版本，64 GB HBM2e，1.6 TB/s 带宽。不支持 FP8（CDNA 2 限制）。AMD 入门数据中心卡常见配置。"
 
   # ========================================================================
   # Intel Habana Gaudi
@@ -432,3 +476,47 @@ gpus:
     spec_source: "Iluvatar CoreX 天数智芯 BI-V100 (天垓100). 7nm, SIMT, 24B transistors, 2.5D CoWoS packaging. FP16 147 TFLOPS / INT8 295 TOPS. 32 GB HBM2, 1.2 TB/s bandwidth. PCIe 4.0 x16, 250W TDP."
     notes_en: "Iluvatar (天数智芯) BI-V100 — training/general-purpose. 7nm SIMT architecture, 32 GB HBM2, 1.2 TB/s memory bandwidth. FP16 147 TFLOPS, INT8 295 TOPS. 250W TDP. Interconnect bandwidth per card is modest (~64 GB/s shared)."
     notes_zh: "天数智芯 BI-V100（天垓100）— 训练/通用 GPU。7nm SIMT 架构，32 GB HBM2，1.2 TB/s 显存带宽。FP16 147 TFLOPS，INT8 295 TOPS。250W TDP。单卡互联带宽 ~64 GB/s，相对较低。"
+
+  - id: MR-V100
+    aliases: [Iluvatar-MR-V100, 天数智铠100, ZhiKai-100]
+    memory_gb: 32
+    nvlink_bandwidth_gbps: 0
+    fp16_tflops: 100
+    fp8_support: false
+    fp4_support: false
+    spec_source: "Iluvatar CoreX 天数智芯 智铠100 (MR-V100) 2022. Inference card, 32 GB HBM2E, ~200 TFLOPS BF16/FP16-low-precision-aggregated, 128-channel 1080p video decode, 150W TDP."
+    notes_en: "Iluvatar inference card (智铠100). 32 GB HBM2E. 150W TDP. Primarily inference-focused — mixed-precision aggregated throughput ~200 TFLOPS."
+    notes_zh: "天数智芯智铠100 推理卡。32 GB HBM2E，150W TDP。主要面向推理场景，混合精度聚合算力约 200 TFLOPS。"
+
+  - id: MLU370-X8
+    aliases: [Cambricon-MLU370-X8, 寒武纪MLU370-X8, 思元370-X8]
+    memory_gb: 48
+    nvlink_bandwidth_gbps: 200
+    fp16_tflops: 48
+    fp8_support: false
+    fp4_support: false
+    spec_source: "Cambricon 寒武纪 MLU370-X8 (dual MLU370 chiplet, 250W). 48 GB LPDDR5, INT8 256 TOPS, FP32 24 TFLOPS (FP16 ~48 TFLOPS estimated, official not given). MLU-Link 200 GB/s."
+    notes_en: "Cambricon (寒武纪) MLU370-X8 — dual-chip package, 250W. 48 GB LPDDR5 (not HBM), INT8 256 TOPS, FP32 24 TFLOPS. MLU-Link 200 GB/s for 8-card setups. LPDDR5 means lower memory bandwidth than HBM cards."
+    notes_zh: "寒武纪 MLU370-X8 — 双芯粒封装，250W。48 GB LPDDR5（非 HBM），INT8 256 TOPS，FP32 24 TFLOPS。MLU-Link 200 GB/s，支持 8 卡部署。LPDDR5 意味着显存带宽低于 HBM 卡。"
+
+  - id: MTT-S4000
+    aliases: [MooreThreads-S4000, 摩尔线程S4000, MTT-S4000-48G]
+    memory_gb: 48
+    nvlink_bandwidth_gbps: 240
+    fp16_tflops: 100
+    fp8_support: false
+    fp4_support: false
+    spec_source: "Moore Threads MTT S4000 datasheet 2023 — 3rd-gen MUSA (曲院). 48 GB GDDR6, 768 GB/s bandwidth. FP16/BF16 100 TFLOPS, INT8 200 TOPS. MTLink 1.0 240 GB/s."
+    notes_en: "Moore Threads (摩尔线程) S4000 — domestic AI training card. 48 GB GDDR6 (not HBM), 768 GB/s. FP16/BF16 100 TFLOPS. MTLink 1.0 240 GB/s. CUDA compatibility via MUSA translation."
+    notes_zh: "摩尔线程 S4000 — 国产训推加速卡。48 GB GDDR6（非 HBM），768 GB/s 带宽。FP16/BF16 100 TFLOPS。MTLink 1.0 互联 240 GB/s。通过 MUSA 兼容 CUDA 生态。"
+
+  - id: MTT-S3000
+    aliases: [MooreThreads-S3000, 摩尔线程S3000]
+    memory_gb: 32
+    nvlink_bandwidth_gbps: 0
+    fp16_tflops: 30
+    fp8_support: false
+    fp4_support: false
+    spec_source: "Moore Threads MTT S3000 — MUSA 春晓 architecture. 32 GB GDDR6, 448 GB/s. FP32 ~15.2 TFLOPS inferred from S4000 comparison (S4000 is 64%+ higher); FP16 ~30 TFLOPS estimate (datasheet not fully public)."
+    notes_en: "Moore Threads (摩尔线程) S3000 — predecessor to S4000. 32 GB GDDR6, 448 GB/s. FP16 specs not fully published; estimated ~30 TFLOPS based on S4000 comparison. Multi-purpose server GPU, also supports rendering."
+    notes_zh: "摩尔线程 S3000 — S4000 的前代。32 GB GDDR6，448 GB/s。FP16 官方未完全披露，基于 S4000 对比推算约 30 TFLOPS。通用服务器 GPU，兼顾渲染场景。"

@@ -159,6 +159,22 @@ _MESSAGES: dict[str, dict[Locale, str]] = {
     "hw.fp4_support": {"en": "FP4 support", "zh": "FP4 支持"},
     "hw.notes": {"en": "notes", "zh": "备注"},
     "hw.spec_source": {"en": "spec source", "zh": "规格来源"},
+    # GPU list subcommand
+    "gpus.list.title": {
+        "en": "Supported GPUs",
+        "zh": "支持的 GPU",
+    },
+    "gpus.col.id": {"en": "id", "zh": "型号"},
+    "gpus.col.memory": {"en": "memory", "zh": "显存"},
+    "gpus.col.nvlink": {"en": "NVLink / fabric", "zh": "互联带宽"},
+    "gpus.col.fp16": {"en": "FP16 TFLOPS", "zh": "FP16"},
+    "gpus.col.fp8": {"en": "FP8", "zh": "FP8"},
+    "gpus.col.fp4": {"en": "FP4", "zh": "FP4"},
+    "gpus.col.aliases": {"en": "aliases", "zh": "别名"},
+    "gpus.total": {
+        "en": "Total: {count} GPUs (pass any id or alias to --gpu)",
+        "zh": "共 {count} 款（--gpu 后面填 ID 或别名均可）",
+    },
     "hw.unknown": {
         "en": "Unknown GPU '{gpu}'. Known: {known}",
         "zh": "未知 GPU '{gpu}'。已知型号：{known}",
