@@ -86,6 +86,15 @@ def main(
         "--decode-bw-util",
         help="Memory-bandwidth utilization factor for decode (default 0.50).",
     ),
+    concurrency_degradation: float = typer.Option(
+        1.0,
+        "--concurrency-degradation",
+        help=(
+            "High-concurrency throughput degradation factor (default 1.0 = "
+            "no degradation — the honest baseline). If your engine drops "
+            "to 60% efficiency under load, pass 1.67. See docs/methodology.md."
+        ),
+    ),
 ) -> None:
     """Evaluate a model against target hardware."""
     if lang in ("en", "zh"):
@@ -122,6 +131,7 @@ def main(
             target_tokens_per_sec=target_tokens_per_sec,
             prefill_utilization=prefill_util,
             decode_bw_utilization=decode_bw_util,
+            concurrency_degradation=concurrency_degradation,
         )
     except AuthRequiredError as e:
         _err.print(f"[bold red]{t('cli.err.auth_required')}[/bold red] {e}")

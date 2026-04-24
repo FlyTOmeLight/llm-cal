@@ -43,11 +43,13 @@ nav:
       - Home: index.md
       - Quickstart: quickstart.md
       - Architecture Guide: architecture-guide.md
+      - Methodology: methodology.md
       - Contributing: contributing.md
   - 中文:
       - 首页: zh/index.md
       - 快速开始: zh/quickstart.md
       - 架构指南: zh/architecture-guide.md
+      - 方法论: zh/methodology.md
       - 参与贡献: zh/contributing.md
   - ADRs:
       - adr/001-modelscope-integration-strategy.md

@@ -1,24 +1,41 @@
 """Performance modeling for prefill latency and decode throughput.
 
-FORMULAS (standard, from transformer inference literature):
+FORMULAS — with sources. See docs/methodology.md for the full audit.
 
 Prefill (compute-bound):
-    FLOPs = 2 × active_params × input_tokens
-    latency = FLOPs / (peak_TFLOPS × 1e12 × utilization)
+    FLOPs = 2 × params × input_tokens
+    latency = FLOPs / (peak_TFLOPS × num_gpus × utilization × 1e12)
+
+    Source: Kaplan et al. 2020, "Scaling Laws for Neural Language Models".
+    The "2" factor is the forward-pass cost per param per token, a standard
+    approximation in transformer inference literature.
 
 Decode (memory-bandwidth-bound):
-    Per-token time = active_weight_bytes / (memory_bandwidth × utilization)
-    Tokens per second = memory_bandwidth × utilization / active_weight_bytes
+    per_token_time = weight_bytes_per_gpu / (memory_bandwidth × utilization)
+    tokens_per_second = memory_bandwidth × utilization / weight_bytes_per_gpu
 
-Utilization factors are EMPIRICAL and workload-dependent. Defaults are
-conservative midpoints from published benchmarks — see docstrings.
+    Source: Kwon et al. SOSP 2023 "Efficient Memory Management for Large
+    Language Model Serving with PagedAttention"; NVIDIA "Mastering LLM
+    Techniques: Inference Optimization" (2023 technical blog).
 
-MoE "active" vs "total" param question:
-    Strictly, MoE decode only reads `num_experts_per_tok` active experts.
-    But vLLM batching typically touches most experts across a batch, so
-    the worst-case "all weights" assumption is often closer to reality.
-    This module returns BOTH numbers when the model is MoE — let the user
-    decide.
+UTILIZATION FACTORS (all empirical, ALL user-overridable):
+  - Prefill 40% — midpoint of vLLM-reported 30-50% MFU on H100
+  - Decode BW 50% — midpoint of NVIDIA/vLLM-reported 40-65% achieved bandwidth
+  - Cluster comm 90% — typical NCCL AllReduce efficiency at TP=8 on NVLink
+  - Concurrency degradation 1.0 (no degradation by default)
+    This is the most uncertain factor. Prior versions defaulted to 1.5
+    (borrowed from an LLM-generated report), which was NOT from a primary
+    source. v0.1 defaults to 1.0 (honest baseline) and exposes the knob
+    so users can dial in whatever their engine actually achieves.
+
+MoE "active" vs "total":
+    Strictly, MoE decode only reads the active experts per token. The
+    ratio used here is a rough approximation:
+        active_ratio ≈ (experts_per_tok + shared_experts) / (routed + shared)
+    This UNDERESTIMATES active weight because attention + embeddings are
+    always active (not just experts). For a more accurate number, use the
+    model card's stated "total / active" figure if available. The
+    "active-only" throughput is labeled "optimistic" for this reason.
 """
 
 from __future__ import annotations
@@ -29,12 +46,14 @@ from llm_cal.architecture.profile import ArchitectureProfile
 from llm_cal.hardware.loader import GPUSpec
 from llm_cal.output.labels import AnnotatedValue, Label
 
-# Empirical defaults. Documented so users can override via CLI.
-DEFAULT_PREFILL_UTILIZATION = 0.40  # compute utilization — vLLM typically hits 35-50%
-DEFAULT_DECODE_BW_UTILIZATION = 0.50  # memory-bw utilization on decode — 40-65% common
-DEFAULT_CLUSTER_COMM_EFFICIENCY = 0.90  # AllReduce overhead reduces per-GPU scaling
-# Throughput degradation at high concurrency (page-table thrash, scheduler overhead).
-DEFAULT_CONCURRENCY_DEGRADATION = 1.5
+# Empirical defaults. All user-overridable via CLI.
+DEFAULT_PREFILL_UTILIZATION = 0.40
+DEFAULT_DECODE_BW_UTILIZATION = 0.50
+DEFAULT_CLUSTER_COMM_EFFICIENCY = 0.90
+# Honest baseline. Previously 1.5, borrowed from an LLM-generated report —
+# that had no primary source, so we reset to 1.0. Users who observe actual
+# degradation on their engine should dial this up via CLI.
+DEFAULT_CONCURRENCY_DEGRADATION = 1.0
 
 
 @dataclass(frozen=True)

@@ -396,7 +396,9 @@ def _render_performance(report: EvaluationReport, console: Console) -> None:
         return
 
     console.print()
-    # Assumption banner — surfaces the utilization factors and SLA.
+    # Assumption banner — surfaces the utilization factors, SLA, and
+    # degradation factor. Every number in the performance section depends
+    # on these.
     assumptions = t(
         "perf.assumptions_note",
         input_tokens=report.perf_input_tokens,
@@ -404,6 +406,7 @@ def _render_performance(report: EvaluationReport, console: Console) -> None:
         target_tps=report.perf_target_tokens_per_sec,
         prefill_util=report.prefill.utilization,
         decode_util=report.decode.bw_utilization,
+        degradation=report.concurrency.degradation_factor,
     )
     console.print(f"[dim italic]{assumptions}[/dim italic]")
 

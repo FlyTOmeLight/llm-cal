@@ -19,6 +19,9 @@ from llm_cal.core.cache import ArtifactCache, CacheKey
 from llm_cal.engine_compat.loader import EngineCompatEntry, find_match
 from llm_cal.fleet.planner import FleetRecommendation, plan
 from llm_cal.hardware.loader import GPUSpec, UnknownGPUError, lookup
+from llm_cal.model_source.base import ModelArtifact, ModelSource
+from llm_cal.model_source.huggingface import HuggingFaceSource
+from llm_cal.output.labels import AnnotatedValue
 from llm_cal.performance.compute import (
     DEFAULT_DECODE_BW_UTILIZATION,
     DEFAULT_PREFILL_UTILIZATION,
@@ -27,10 +30,8 @@ from llm_cal.performance.compute import (
     estimate_decode,
     estimate_prefill,
 )
-from llm_cal.performance.concurrency import ConcurrencyAnalysis, analyze as analyze_concurrency
-from llm_cal.model_source.base import ModelArtifact, ModelSource
-from llm_cal.model_source.huggingface import HuggingFaceSource
-from llm_cal.output.labels import AnnotatedValue
+from llm_cal.performance.concurrency import ConcurrencyAnalysis
+from llm_cal.performance.concurrency import analyze as analyze_concurrency
 from llm_cal.weight_analyzer import WeightReport, analyze
 from llm_cal.weight_analyzer.reconciler import ReconciliationReport, reconcile
 
@@ -93,6 +94,7 @@ class Evaluator:
         target_tokens_per_sec: float | None = None,
         prefill_utilization: float = DEFAULT_PREFILL_UTILIZATION,
         decode_bw_utilization: float = DEFAULT_DECODE_BW_UTILIZATION,
+        concurrency_degradation: float = 1.0,
     ) -> EvaluationReport:
         artifact = self._fetch(model_id, refresh=refresh)
         profile = detect(artifact.config)
@@ -168,7 +170,6 @@ class Evaluator:
             )
             # Resolve performance defaults when user didn't specify.
             eff_input = input_tokens or 2000
-            eff_output = output_tokens or 512
             eff_target = target_tokens_per_sec or 30.0
 
             prefill_est = estimate_prefill(
@@ -203,7 +204,7 @@ class Evaluator:
             headroom_per_gpu = (
                 chosen_option.usable_bytes_per_gpu - chosen_option.weight_bytes_per_gpu
             )
-            cluster_headroom = max(0, headroom_per_gpu) * chosen
+            # Cluster-wide headroom is per-GPU * N; currently we use per-GPU view below.
             # Reference context for the L bound: match K's headroom context (128K
             # if model supports it, else max).
             kv_ref_ctx = 131_072 if 131_072 in kv_by_ctx else max(kv_by_ctx.keys())
@@ -224,6 +225,7 @@ class Evaluator:
                 kv_bytes_per_request=kv_ref_per_gpu,
                 decode=decode_est,
                 target_tokens_per_sec=eff_target,
+                degradation=concurrency_degradation,
             )
 
         return EvaluationReport(

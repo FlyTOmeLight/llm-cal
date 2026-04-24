@@ -102,10 +102,14 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["B", "N"]
-# Modules with intentional full-width Chinese punctuation.
+# Modules with intentional full-width Chinese punctuation or × multiplication signs
+# in docstrings/comments (methodology citations, unit formulas).
 "src/llm_cal/common/i18n.py" = ["RUF001", "RUF002", "RUF003"]
 "src/llm_cal/fleet/planner.py" = ["RUF001", "RUF002", "RUF003"]
 "src/llm_cal/model_source/auth.py" = ["RUF001", "RUF002", "RUF003"]
+"src/llm_cal/performance/compute.py" = ["RUF001", "RUF002", "RUF003"]
+"src/llm_cal/performance/concurrency.py" = ["RUF001", "RUF002", "RUF003"]
+"src/llm_cal/hardware/loader.py" = ["RUF001", "RUF002", "RUF003"]
 "tests/test_i18n.py" = ["B", "N", "RUF001", "RUF002", "RUF003"]
 
 [tool.pytest.ini_options]

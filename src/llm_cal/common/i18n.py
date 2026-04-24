@@ -248,14 +248,18 @@ _MESSAGES: dict[str, dict[Locale, str]] = {
         "en": (
             "Assumes input={input_tokens} tokens, output={output_tokens} tokens, "
             "target {target_tps} tok/s per user. "
-            "Utilization: prefill={prefill_util:.0%} / decode_bw={decode_util:.0%}. "
-            "All numbers are [estimated] — override via --prefill-util / --decode-bw-util."
+            "Utilization: prefill={prefill_util:.0%} / decode_bw={decode_util:.0%} "
+            "/ concurrency_degradation={degradation:.2f}x. "
+            "All numbers are [estimated] — see docs/methodology.md for formula sources "
+            "and override via --prefill-util / --decode-bw-util / --concurrency-degradation."
         ),
         "zh": (
             "假设输入 {input_tokens} tokens、输出 {output_tokens} tokens、"
             "每用户目标 {target_tps} tok/s。"
-            "利用率：prefill={prefill_util:.0%} / decode_bw={decode_util:.0%}。"
-            "所有数字都是 [estimated]——可通过 --prefill-util / --decode-bw-util 覆盖。"
+            "利用率：prefill={prefill_util:.0%} / decode_bw={decode_util:.0%} "
+            "/ 并发退化={degradation:.2f}x。"
+            "所有数字都是 [估算]——公式来源见 docs/methodology.md，"
+            "可通过 --prefill-util / --decode-bw-util / --concurrency-degradation 覆盖。"
         ),
     },
     "perf.prefill_latency": {
