@@ -33,9 +33,11 @@ def estimate_total_params(profile: ArchitectureProfile) -> AnnotatedValue[int]:
     n_layers = profile.num_hidden_layers
     vocab = profile.vocab_size
 
-    # Embedding + output head (assume untied).
+    # Embedding + output head. When weights are tied (Gemma, some Llamas),
+    # the output head IS the embedding — don't count twice.
     embed_params = vocab * hidden
-    output_head_params = vocab * hidden
+    tied = bool(profile.auxiliary.get("tie_word_embeddings", False))
+    output_head_params = 0 if tied else vocab * hidden
 
     # Per-layer attention projections.
     attn_params = _attention_params(profile)

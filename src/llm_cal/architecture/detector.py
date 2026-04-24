@@ -85,6 +85,15 @@ def detect(config: dict[str, Any]) -> ArchitectureProfile:
     # Step 5: confidence — HIGH iff model_type is in the registry
     confidence = Confidence.HIGH if model_type in KNOWN_MODEL_TYPES else Confidence.MEDIUM
 
+    # Pass-through of config fields our formulas can use downstream. Keeps the
+    # Profile schema stable while enabling richer computation (e.g. dense FFN
+    # param count needs intermediate_size).
+    auxiliary: dict[str, object] = {}
+    if isinstance(config.get("intermediate_size"), int):
+        auxiliary["intermediate_size"] = config["intermediate_size"]
+    if config.get("tie_word_embeddings") is not None:
+        auxiliary["tie_word_embeddings"] = bool(config["tie_word_embeddings"])
+
     return ArchitectureProfile(
         model_type=model_type,
         architectures=tuple(str(a).lower() for a in config.get("architectures", [])),
@@ -97,6 +106,7 @@ def detect(config: dict[str, Any]) -> ArchitectureProfile:
         moe=moe,
         position=position,
         sliding_window=sliding,
+        auxiliary=auxiliary,
     )
 
 
