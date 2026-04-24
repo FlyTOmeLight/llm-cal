@@ -107,3 +107,97 @@ entries:
         expected_min: 90_000_000_000
         expected_max: 100_000_000_000
         source: "HF siblings API — 46.7B total params × 2 bytes ≈ 93 GB"
+
+  # ------------------------------------------------------------
+  # DeepSeek-V3.2 — MLA structurally (NSA at runtime). Validates:
+  #  - model_type=deepseek_v32 is recognized
+  #  - FP8 quantization (inherited from V3)
+  #  - Tool honestly reports MLA because config.json exposes only MLA
+  #    keys; runtime NSA behavior is NOT in config. Future detection
+  #    improvement could override based on model_type.
+  # ------------------------------------------------------------
+  - name: "DeepSeek-V3.2 on H800 (MLA config; NSA runtime)"
+    model_id: deepseek-ai/DeepSeek-V3.2
+    gpu: H800
+    engine: vllm
+    expectations:
+      - field: attention_variant
+        expected: MLA
+        source: >-
+          config.json q_lora_rank=1536, no nsa_config key — detector
+          correctly reports MLA. V3.2's NSA sparse behavior is a runtime
+          feature selected by vllm --attention-backend nsa, NOT encoded
+          in config.json keys. TODO: detector could upgrade to NSA when
+          model_type matches known NSA models.
+      - field: is_moe
+        expected: true
+        source: "config.json n_routed_experts=256"
+      - field: quantization
+        expected: FP8
+        source: "config.json quantization_config.quant_method=fp8"
+
+  # ------------------------------------------------------------
+  # Qwen3-30B-A3B — validates qwen3_moe model_type + GQA+MoE combo
+  # ------------------------------------------------------------
+  - name: "Qwen3-30B-A3B on H100 (Qwen3 MoE, GQA)"
+    model_id: Qwen/Qwen3-30B-A3B
+    gpu: H100
+    engine: vllm
+    expectations:
+      - field: attention_variant
+        expected: GQA
+        source: "config.json num_kv_heads=4 < num_attention_heads=32"
+      - field: is_moe
+        expected: true
+        source: "config.json num_local_experts or similar MoE key present"
+      - field: quantization
+        expected: FP16
+        source: "config.json torch_dtype=bfloat16"
+      - field: weight_bytes
+        expected_min: 58_000_000_000
+        expected_max: 65_000_000_000
+        source: "HF siblings API — 30.5B total params × 2 bytes ≈ 61 GB"
+
+  # ------------------------------------------------------------
+  # Qwen2.5-7B — small-model sanity + qwen2 model_type
+  # ------------------------------------------------------------
+  - name: "Qwen2.5-7B on H100 (small dense, sanity)"
+    model_id: Qwen/Qwen2.5-7B-Instruct
+    gpu: H100
+    engine: vllm
+    expectations:
+      - field: attention_variant
+        expected: GQA
+        source: "config.json num_kv_heads=4 < num_attention_heads=28"
+      - field: is_moe
+        expected: false
+        source: "config.json has no MoE keys"
+      - field: quantization
+        expected: FP16
+        source: "config.json torch_dtype=bfloat16"
+      - field: weight_bytes
+        expected_min: 14_000_000_000
+        expected_max: 16_000_000_000
+        source: "HF siblings API — 7.6B params × 2 bytes ≈ 15.2 GB"
+
+  # ------------------------------------------------------------
+  # Phi-4 — validates phi3 model_type + dense 14B
+  # ------------------------------------------------------------
+  - name: "Phi-4 on L40S (phi3 architecture, 14B dense)"
+    model_id: microsoft/Phi-4
+    gpu: L40S
+    engine: vllm
+    expectations:
+      - field: attention_variant
+        expected: GQA
+        source: "config.json num_kv_heads=10 < num_attention_heads=40"
+      - field: is_moe
+        expected: false
+        source: "config.json has no MoE keys"
+      - field: quantization
+        expected: FP16
+        source: "config.json torch_dtype=bfloat16"
+      - field: weight_bytes
+        expected_min: 28_000_000_000
+        expected_max: 31_000_000_000
+        source: "HF siblings API — 14.7B params × 2 bytes ≈ 29.3 GB"
