@@ -1,53 +1,26 @@
-# GPU database — v0.1 initial set.
-# Values are from public vendor spec sheets. `notes` is bilingual to help
-# readers understand non-obvious constraints (e.g. why H800 is slower than H100).
+# GPU database — v0.1.
+#
+# DATA PROVENANCE:
+# Numeric specs (memory_gb, nvlink_bandwidth_gbps, fp16_tflops, fp8/fp4_support)
+# come from public vendor datasheets and commonly-cited benchmarks. Each entry
+# records its source in `spec_source` so users can audit.
+#
+# Conventions:
+# - memory_gb: per-card HBM / GDDR in GB (vendor nominal)
+# - nvlink_bandwidth_gbps: aggregate NVLink (or equivalent like xGMI/HCCS)
+#   bandwidth. 0 if the GPU has no high-bandwidth interconnect (e.g. consumer
+#   Ada removed NVLink).
+# - fp16_tflops: peak dense FP16/BF16 with Tensor Cores; vendor cited figure.
+# - fp8_support / fp4_support: whether the GPU has NATIVE Tensor Core
+#   acceleration for that precision. Software emulation does NOT count.
+#
+# To add a new GPU: append an entry with all required fields + spec_source.
+# See docs/architecture-guide.md "How to add a new GPU".
 schema_version: 1
 gpus:
-  - id: H100
-    aliases: [H100-SXM5, H100-80G, H100-SXM]
-    memory_gb: 80
-    nvlink_bandwidth_gbps: 900
-    fp16_tflops: 989
-    fp8_support: true
-    fp4_support: false
-    notes_en: "Hopper flagship. Full NVLink."
-    notes_zh: "Hopper 架构旗舰，完整 NVLink 带宽。"
-  - id: H800
-    aliases: [H800-SXM5, H800-80G]
-    memory_gb: 80
-    nvlink_bandwidth_gbps: 400
-    fp16_tflops: 989
-    fp8_support: true
-    fp4_support: false
-    notes_en: "China-regulated H100 variant. NVLink bandwidth halved (400 vs 900). Same HBM and compute as H100."
-    notes_zh: "H100 的中国合规版本。NVLink 带宽减半（400 vs 900 GB/s），HBM 容量和算力与 H100 相同。"
-  - id: H200
-    aliases: [H200-SXM, H200-141G]
-    memory_gb: 141
-    nvlink_bandwidth_gbps: 900
-    fp16_tflops: 989
-    fp8_support: true
-    fp4_support: false
-    notes_en: "Hopper with HBM3e. 141 GB per GPU."
-    notes_zh: "搭载 HBM3e 的 Hopper，单卡 141 GB。"
-  - id: A100-80G
-    aliases: [A100-80, A100-SXM-80G]
-    memory_gb: 80
-    nvlink_bandwidth_gbps: 600
-    fp16_tflops: 312
-    fp8_support: false
-    fp4_support: false
-    notes_en: "Ampere. No native FP8. Still widely deployed."
-    notes_zh: "Ampere 架构。不原生支持 FP8，但部署量仍然非常大。"
-  - id: A100-40G
-    aliases: [A100-40, A100-SXM-40G]
-    memory_gb: 40
-    nvlink_bandwidth_gbps: 600
-    fp16_tflops: 312
-    fp8_support: false
-    fp4_support: false
-    notes_en: "Ampere 40 GB variant. Smaller HBM limits large-model single-node deployments."
-    notes_zh: "Ampere 的 40 GB 版本，显存较小，大模型单机部署受限。"
+  # ========================================================================
+  # NVIDIA Blackwell (2024+) — native FP4
+  # ========================================================================
   - id: B200
     aliases: [B200-SXM, B200-192G]
     memory_gb: 192
@@ -55,23 +28,269 @@ gpus:
     fp16_tflops: 2250
     fp8_support: true
     fp4_support: true
+    spec_source: "NVIDIA Blackwell architecture overview (nvidia.com/blackwell)"
     notes_en: "Blackwell flagship. Native FP4 Tensor Cores. First GPU that accelerates DeepSeek-V4-Flash-style FP4 at hardware level."
     notes_zh: "Blackwell 旗舰。原生 FP4 Tensor Core，首款在硬件层加速 DeepSeek-V4-Flash 类 FP4 模型的 GPU。"
-  - id: "910B"
-    aliases: [Ascend-910B, "910B2", "910B3"]
-    memory_gb: 64
-    nvlink_bandwidth_gbps: 400  # HCCS equivalent
-    fp16_tflops: 376
-    fp8_support: false
+
+  # ========================================================================
+  # NVIDIA Hopper (2022+)
+  # ========================================================================
+  - id: H100
+    aliases: [H100-SXM5, H100-80G, H100-SXM]
+    memory_gb: 80
+    nvlink_bandwidth_gbps: 900
+    fp16_tflops: 989
+    fp8_support: true
     fp4_support: false
-    notes_en: "Huawei Ascend. HCCS interconnect instead of NVLink."
-    notes_zh: "华为昇腾，使用 HCCS 替代 NVLink。部分推理引擎需走 MindIE / CANN 路径，vLLM/SGLang 支持需看具体版本。"
+    spec_source: "NVIDIA H100 datasheet (nvidia.com/h100)"
+    notes_en: "Hopper flagship. Full NVLink."
+    notes_zh: "Hopper 架构旗舰，完整 NVLink 带宽。"
+
+  - id: H800
+    aliases: [H800-SXM5, H800-80G]
+    memory_gb: 80
+    nvlink_bandwidth_gbps: 400
+    fp16_tflops: 989
+    fp8_support: true
+    fp4_support: false
+    spec_source: "NVIDIA H800 compliance variant — NVLink halved from H100 per US export controls"
+    notes_en: "China-regulated H100 variant. NVLink bandwidth halved (400 vs 900). Same HBM and compute as H100."
+    notes_zh: "H100 的中国合规版本。NVLink 带宽减半（400 vs 900 GB/s），HBM 容量和算力与 H100 相同。"
+
+  - id: H200
+    aliases: [H200-SXM, H200-141G]
+    memory_gb: 141
+    nvlink_bandwidth_gbps: 900
+    fp16_tflops: 989
+    fp8_support: true
+    fp4_support: false
+    spec_source: "NVIDIA H200 datasheet (nvidia.com/h200)"
+    notes_en: "Hopper with HBM3e. 141 GB per GPU."
+    notes_zh: "搭载 HBM3e 的 Hopper，单卡 141 GB。"
+
+  - id: H20
+    aliases: [H20-96G, H20-SXM]
+    memory_gb: 96
+    nvlink_bandwidth_gbps: 900
+    fp16_tflops: 148
+    fp8_support: true
+    fp4_support: false
+    spec_source: "NVIDIA H20 — released 2024 as China-compliant successor to H800. Compute heavily reduced (~15% of H100); memory bandwidth and HBM3e preserved."
+    notes_en: "China-compliance Hopper post-Oct-2023 export rules. Compute ~15% of H100 (148 vs 989 TFLOPS), but HBM3e memory bandwidth preserved. Good for memory-bound LLM inference, poor for training."
+    notes_zh: "2023 年 10 月出口管制后的中国合规 Hopper。算力仅为 H100 的约 15%（148 vs 989 TFLOPS），但 HBM3e 显存带宽保留。推理（显存带宽受限）尚可，训练基本不实用。"
+
+  # ========================================================================
+  # NVIDIA Ada Lovelace (datacenter) — FP8 yes, NVLink no
+  # ========================================================================
+  - id: L40S
+    aliases: [L40-S, L40S-48G]
+    memory_gb: 48
+    nvlink_bandwidth_gbps: 0
+    fp16_tflops: 362
+    fp8_support: true
+    fp4_support: false
+    spec_source: "NVIDIA L40S datasheet 2023"
+    notes_en: "Ada datacenter. 48 GB GDDR6. No NVLink — multi-GPU setups rely on PCIe. Cost-effective for small/medium model inference."
+    notes_zh: "Ada 架构数据中心卡，48 GB GDDR6。无 NVLink，多卡需走 PCIe。中小模型推理性价比高。"
+
+  - id: L40
+    aliases: [L40-48G]
+    memory_gb: 48
+    nvlink_bandwidth_gbps: 0
+    fp16_tflops: 181
+    fp8_support: true
+    fp4_support: false
+    spec_source: "NVIDIA L40 datasheet 2022"
+    notes_en: "Ada datacenter predecessor to L40S. Same 48 GB, half the compute. Widely deployed in enterprise clouds."
+    notes_zh: "L40S 的前代，Ada 架构数据中心卡。同为 48 GB，算力减半。企业私有云部署量较大。"
+
+  - id: L4
+    aliases: [L4-24G]
+    memory_gb: 24
+    nvlink_bandwidth_gbps: 0
+    fp16_tflops: 121
+    fp8_support: true
+    fp4_support: false
+    spec_source: "NVIDIA L4 datasheet 2023"
+    notes_en: "Low-profile Ada, 24 GB GDDR6. Common in low-concurrency inference / transcoding. No NVLink."
+    notes_zh: "低功耗 Ada，24 GB GDDR6。常用于低并发推理和转码场景。无 NVLink。"
+
+  - id: RTX6000-Ada
+    aliases: [RTX-6000-Ada, RTX6000Ada, L6000]
+    memory_gb: 48
+    nvlink_bandwidth_gbps: 0
+    fp16_tflops: 365
+    fp8_support: true
+    fp4_support: false
+    spec_source: "NVIDIA RTX 6000 Ada datasheet 2022"
+    notes_en: "Ada Pro workstation. 48 GB, similar to L40S but for workstations. FP8 yes, no NVLink."
+    notes_zh: "Ada Pro 工作站卡。48 GB，规格接近 L40S 但面向工作站。支持 FP8，无 NVLink。"
+
   - id: RTX4090
     aliases: ["4090", RTX-4090]
     memory_gb: 24
-    nvlink_bandwidth_gbps: 0  # No NVLink on consumer Ada
+    nvlink_bandwidth_gbps: 0
     fp16_tflops: 165
     fp8_support: true
     fp4_support: false
+    spec_source: "NVIDIA RTX 4090 datasheet 2022"
     notes_en: "Consumer Ada. No NVLink. Large models need multi-GPU via PCIe (slower)."
     notes_zh: "消费级 Ada 架构，无 NVLink。大模型多卡只能走 PCIe（明显更慢）。"
+
+  # ========================================================================
+  # NVIDIA Ampere (2020+)
+  # ========================================================================
+  - id: A100-80G
+    aliases: [A100-80, A100-SXM-80G]
+    memory_gb: 80
+    nvlink_bandwidth_gbps: 600
+    fp16_tflops: 312
+    fp8_support: false
+    fp4_support: false
+    spec_source: "NVIDIA A100 datasheet 2020"
+    notes_en: "Ampere. No native FP8. Still widely deployed."
+    notes_zh: "Ampere 架构。不原生支持 FP8，但部署量仍然非常大。"
+
+  - id: A100-40G
+    aliases: [A100-40, A100-SXM-40G]
+    memory_gb: 40
+    nvlink_bandwidth_gbps: 600
+    fp16_tflops: 312
+    fp8_support: false
+    fp4_support: false
+    spec_source: "NVIDIA A100 40GB datasheet 2020"
+    notes_en: "Ampere 40 GB variant. Smaller HBM limits large-model single-node deployments."
+    notes_zh: "Ampere 的 40 GB 版本，显存较小，大模型单机部署受限。"
+
+  - id: A40
+    aliases: [A40-48G]
+    memory_gb: 48
+    nvlink_bandwidth_gbps: 112
+    fp16_tflops: 150
+    fp8_support: false
+    fp4_support: false
+    spec_source: "NVIDIA A40 datasheet 2020"
+    notes_en: "Ampere workstation. 48 GB with NVLink bridge (limited bandwidth). No FP8."
+    notes_zh: "Ampere 工作站卡，48 GB + NVLink 桥接（带宽较低）。不支持 FP8。"
+
+  - id: A10
+    aliases: [A10-24G]
+    memory_gb: 24
+    nvlink_bandwidth_gbps: 0
+    fp16_tflops: 125
+    fp8_support: false
+    fp4_support: false
+    spec_source: "NVIDIA A10 datasheet 2021"
+    notes_en: "Ampere inference card. 24 GB GDDR6. Widely used for low-cost inference in enterprise clouds."
+    notes_zh: "Ampere 推理卡，24 GB GDDR6。企业云低成本推理常用配置。"
+
+  - id: A10G
+    aliases: [A10G-24G]
+    memory_gb: 24
+    nvlink_bandwidth_gbps: 0
+    fp16_tflops: 125
+    fp8_support: false
+    fp4_support: false
+    spec_source: "NVIDIA A10G — AWS-specific variant of A10, g5 instances"
+    notes_en: "AWS-specific A10 variant. Same silicon as A10, deployed in g5 EC2 instances. No NVLink."
+    notes_zh: "AWS 定制版 A10，用于 g5 EC2 实例。核心规格与 A10 相同，无 NVLink。"
+
+  # ========================================================================
+  # NVIDIA Volta / Turing (older, still deployed)
+  # ========================================================================
+  - id: V100-SXM2-32G
+    aliases: [V100, V100-32G, V100-SXM2]
+    memory_gb: 32
+    nvlink_bandwidth_gbps: 300
+    fp16_tflops: 125
+    fp8_support: false
+    fp4_support: false
+    spec_source: "NVIDIA V100 SXM2 datasheet 2017"
+    notes_en: "Volta. No FP8. Still deployed in many existing clusters — works for smaller models, tight for 70B+."
+    notes_zh: "Volta 架构。不支持 FP8，但仍在大量老集群中服役。小模型够用，70B+ 紧张。"
+
+  - id: T4
+    aliases: [T4-16G]
+    memory_gb: 16
+    nvlink_bandwidth_gbps: 0
+    fp16_tflops: 65
+    fp8_support: false
+    fp4_support: false
+    spec_source: "NVIDIA T4 datasheet 2018"
+    notes_en: "Turing inference card. 16 GB, no NVLink, no FP8. Common as the cheapest cloud GPU option."
+    notes_zh: "Turing 推理卡。16 GB，无 NVLink，无 FP8。各云厂商最便宜的 GPU 选项之一。"
+
+  # ========================================================================
+  # AMD (ROCm, xGMI instead of NVLink)
+  # ========================================================================
+  - id: MI300X
+    aliases: [MI300X-192G, AMD-MI300X]
+    memory_gb: 192
+    nvlink_bandwidth_gbps: 896
+    fp16_tflops: 1307
+    fp8_support: true
+    fp4_support: false
+    spec_source: "AMD Instinct MI300X datasheet 2023-12"
+    notes_en: "AMD flagship. 192 GB HBM3 (largest single-card memory). xGMI 896 GB/s (like NVLink). Software stack: ROCm + vLLM. Support for DeepSeek V4 etc. lags Nvidia by weeks."
+    notes_zh: "AMD 旗舰卡。192 GB HBM3（单卡最大显存）。xGMI 互联 896 GB/s（类 NVLink）。需要 ROCm + vLLM 栈。新模型支持通常比 NVIDIA 晚几周。"
+
+  - id: MI250X
+    aliases: [MI250X-128G, AMD-MI250X]
+    memory_gb: 128
+    nvlink_bandwidth_gbps: 800
+    fp16_tflops: 383
+    fp8_support: false
+    fp4_support: false
+    spec_source: "AMD Instinct MI250X datasheet 2022"
+    notes_en: "AMD previous-gen. 128 GB HBM2e. No FP8. Deployed in some HPC clusters (Frontier)."
+    notes_zh: "AMD 上代数据中心卡。128 GB HBM2e，不支持 FP8。少数 HPC 集群（如 Frontier 超算）有部署。"
+
+  # ========================================================================
+  # Intel Habana Gaudi
+  # ========================================================================
+  - id: Gaudi3
+    aliases: [Gaudi-3, Habana-Gaudi3]
+    memory_gb: 128
+    nvlink_bandwidth_gbps: 1200
+    fp16_tflops: 1835
+    fp8_support: true
+    fp4_support: false
+    spec_source: "Intel Gaudi 3 datasheet 2024"
+    notes_en: "Intel Habana Gaudi 3. 128 GB HBM2e. FP8 support. Software stack: SynapseAI (not CUDA). vLLM support via Intel fork."
+    notes_zh: "Intel Habana Gaudi 3。128 GB HBM2e，支持 FP8。软件栈为 SynapseAI（非 CUDA）。vLLM 需走 Intel 分支。"
+
+  - id: Gaudi2
+    aliases: [Gaudi-2, Habana-Gaudi2]
+    memory_gb: 96
+    nvlink_bandwidth_gbps: 2400
+    fp16_tflops: 432
+    fp8_support: true
+    fp4_support: false
+    spec_source: "Intel Gaudi 2 datasheet 2022"
+    notes_en: "Intel Habana Gaudi 2. 96 GB HBM2e with 24x100GbE on-board (used for scale-out). FP8 support."
+    notes_zh: "Intel Habana Gaudi 2。96 GB HBM2e，板载 24 个 100GbE（用于横向扩展）。支持 FP8。"
+
+  # ========================================================================
+  # Huawei Ascend
+  # ========================================================================
+  - id: "910B"
+    aliases: [Ascend-910B, "910B2", "910B3"]
+    memory_gb: 64
+    nvlink_bandwidth_gbps: 400
+    fp16_tflops: 376
+    fp8_support: false
+    fp4_support: false
+    spec_source: "Huawei Ascend 910B — commonly cited specs; official datasheet limited distribution"
+    notes_en: "Huawei Ascend. HCCS interconnect instead of NVLink. vLLM/SGLang support requires MindIE / CANN path; check specific versions."
+    notes_zh: "华为昇腾，使用 HCCS 替代 NVLink。部分推理引擎需走 MindIE / CANN 路径，vLLM/SGLang 支持需看具体版本。"
+
+  - id: "910C"
+    aliases: [Ascend-910C]
+    memory_gb: 64
+    nvlink_bandwidth_gbps: 400
+    fp16_tflops: 780
+    fp8_support: false
+    fp4_support: false
+    spec_source: "Huawei Ascend 910C — launched 2024, commonly cited specs pending official datasheet"
+    notes_en: "Huawei Ascend 910C (2024). Roughly 2x compute vs 910B at similar memory. FP8 support status unclear — check CANN version notes. Software ecosystem matures but still behind NVIDIA."
+    notes_zh: "华为昇腾 910C（2024 年）。算力大约是 910B 的两倍，显存相当。FP8 支持情况需看 CANN 版本。软件生态持续完善但仍落后于 NVIDIA。"

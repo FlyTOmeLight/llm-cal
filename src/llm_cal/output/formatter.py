@@ -289,6 +289,8 @@ def _render_hardware(report: EvaluationReport, console: Console) -> None:
     notes = spec.localized_notes(locale)
     if notes:
         table.add_row(t("hw.notes"), notes)
+    if spec.spec_source:
+        table.add_row(t("hw.spec_source"), spec.spec_source)
     console.print(table)
 
 

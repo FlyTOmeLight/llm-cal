@@ -158,6 +158,7 @@ _MESSAGES: dict[str, dict[Locale, str]] = {
     "hw.fp8_support": {"en": "FP8 support", "zh": "FP8 支持"},
     "hw.fp4_support": {"en": "FP4 support", "zh": "FP4 支持"},
     "hw.notes": {"en": "notes", "zh": "备注"},
+    "hw.spec_source": {"en": "spec source", "zh": "规格来源"},
     "hw.unknown": {
         "en": "Unknown GPU '{gpu}'. Known: {known}",
         "zh": "未知 GPU '{gpu}'。已知型号：{known}",

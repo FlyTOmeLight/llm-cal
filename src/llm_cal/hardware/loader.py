@@ -24,6 +24,10 @@ class GPUSpec(BaseModel):
     fp4_support: bool
     notes_en: str | None = None
     notes_zh: str | None = None
+    # Where the numeric specs came from. A URL to a vendor datasheet / trusted
+    # benchmark, or a short note like "NVIDIA H100 datasheet 2024-Q3". Lets
+    # users audit the source; honesty-over-convenience principle.
+    spec_source: str | None = None
 
     def localized_notes(self, locale: Literal["en", "zh"]) -> str | None:
         if locale == "zh":

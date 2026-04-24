@@ -14,7 +14,76 @@ from llm_cal.hardware.loader import (
 def test_database_loads_and_has_all_expected_gpus():
     db = load_database()
     ids = {g.id for g in db.gpus}
-    assert {"H100", "H800", "H200", "A100-80G", "A100-40G", "B200", "910B", "RTX4090"} <= ids
+    expected = {
+        # NVIDIA Blackwell / Hopper
+        "B200",
+        "H100",
+        "H800",
+        "H200",
+        "H20",
+        # NVIDIA Ada
+        "L40S",
+        "L40",
+        "L4",
+        "RTX6000-Ada",
+        "RTX4090",
+        # NVIDIA Ampere
+        "A100-80G",
+        "A100-40G",
+        "A40",
+        "A10",
+        "A10G",
+        # NVIDIA Volta / Turing
+        "V100-SXM2-32G",
+        "T4",
+        # AMD
+        "MI300X",
+        "MI250X",
+        # Intel Habana
+        "Gaudi3",
+        "Gaudi2",
+        # Huawei Ascend
+        "910B",
+        "910C",
+    }
+    assert expected <= ids, f"missing: {expected - ids}"
+
+
+def test_every_gpu_has_spec_source():
+    """Honesty constraint: every spec must be traceable to a source.
+
+    If this test fails, someone added a GPU without citing where the numbers
+    came from. That violates the tool's label-discipline philosophy.
+    """
+    db = load_database()
+    missing = [g.id for g in db.gpus if not g.spec_source]
+    assert not missing, (
+        f"GPUs without spec_source: {missing}. "
+        "Add a spec_source field citing the vendor datasheet or benchmark URL."
+    )
+
+
+def test_h20_recognized():
+    """H20 is a critical entry for the China market post-2023 export controls."""
+    spec = lookup("H20")
+    assert spec.id == "H20"
+    assert spec.memory_gb == 96
+    assert spec.fp8_support is True
+    assert spec.fp16_tflops < 200  # Heavily throttled vs H100's 989
+
+
+def test_mi300x_is_biggest_single_card():
+    """MI300X has the largest single-card memory in v0.1 database."""
+    db = load_database()
+    largest = max(db.gpus, key=lambda g: g.memory_gb)
+    assert largest.id in ("MI300X", "B200")  # Both 192 GB
+
+
+def test_t4_has_no_fp8_no_nvlink():
+    """Sanity: cheapest cloud option shouldn't accidentally claim FP8."""
+    spec = lookup("T4")
+    assert spec.fp8_support is False
+    assert spec.nvlink_bandwidth_gbps == 0
 
 
 def test_lookup_exact_id():
