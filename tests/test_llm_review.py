@@ -123,16 +123,25 @@ class TestResultShape:
         assert result.error is not None
 
 
-def test_cli_flag_in_help():
-    """Smoke test: --llm-review flag is exposed in CLI help."""
-    import os
+def test_cli_flag_is_wired():
+    """Smoke test: --llm-review flag is registered on the CLI callback.
 
-    from typer.testing import CliRunner
+    We introspect the callback signature instead of rendering --help — Rich's
+    help rendering writes to sys.__stdout__ on headless CI runners and the
+    captured stdout ends up as ANSI box decorations with no content inside.
+    Testing the wiring directly is both more robust and more honest: the
+    question is "did someone forget to plumb the option through", not
+    "does Rich render a box".
+    """
+    import inspect
 
     from llm_cal.cli import app
 
-    runner = CliRunner()
-    env = {**os.environ, "COLUMNS": "200", "TERM": "xterm-256color"}
-    result = runner.invoke(app, ["--help"], env=env)
-    assert result.exit_code == 0
-    assert "llm-review" in result.stdout.lower()
+    # Typer app stores the registered main() function here
+    assert app.registered_commands, "CLI app has no registered commands"
+    callback = app.registered_commands[0].callback
+    assert callback is not None
+    sig = inspect.signature(callback)
+    assert "llm_review" in sig.parameters, (
+        f"Expected --llm-review flag wired into main(); got parameters: {list(sig.parameters)}"
+    )
