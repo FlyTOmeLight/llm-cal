@@ -121,9 +121,7 @@ def _evaluate_field(report: EvaluationReport, exp: Expectation) -> tuple[str, St
     Each `field` name matches a documented check in dataset.yaml.
     """
     if exp.field == "attention_variant":
-        attn_actual = (
-            report.profile.attention.variant if report.profile.attention else "(none)"
-        )
+        attn_actual = report.profile.attention.variant if report.profile.attention else "(none)"
         return attn_actual, ("PASS" if attn_actual == exp.expected else "FAIL")
 
     if exp.field == "quantization":
