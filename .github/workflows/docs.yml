@@ -41,6 +41,11 @@ jobs:
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
+        with:
+          # Try to auto-enable Pages if not yet configured; falls back gracefully
+          # if the token lacks `actions: write`. One-time manual enable is still
+          # required for first deploy: Settings → Pages → Source: GitHub Actions.
+          enablement: true
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
