@@ -1,0 +1,86 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Tag to publish (e.g. v0.1.2)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build sdist + wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          # hatch-vcs needs full history to resolve the tag -> version
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install build backend
+        run: pip install build twine
+
+      - name: Build distributions
+        run: python -m build
+
+      - name: Verify package metadata
+        run: twine check dist/*
+
+      - name: Verify version matches tag
+        # ref comes from github context — pass through env to avoid shell injection.
+        env:
+          TAG_REF: ${{ inputs.ref || github.ref_name }}
+        run: |
+          EXPECTED="${TAG_REF#v}"
+          WHL=$(ls dist/*.whl | head -1)
+          ACTUAL=$(basename "$WHL" | sed -E 's/^llm_cal-([^-]+)-.*/\1/')
+          echo "tag=$TAG_REF expected=$EXPECTED actual=$ACTUAL"
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::Built version ($ACTUAL) does not match tag ($EXPECTED). Refusing to publish."
+            exit 1
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
+
+  publish:
+    name: Publish to PyPI (OIDC)
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/llm-cal/
+    permissions:
+      # Required for OIDC trusted publishing — no API token needed
+      id-token: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # Trusted publishing: no username/password. PyPI verifies the
+          # GitHub OIDC token against the registered publisher config.
+          packages-dir: dist/
