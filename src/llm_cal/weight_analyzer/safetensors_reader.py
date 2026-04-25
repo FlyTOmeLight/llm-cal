@@ -35,9 +35,13 @@ def pick_sample_shard(siblings: tuple[SiblingFile, ...]) -> SiblingFile | None:
 
     Preference order:
       1. `model.safetensors` (single-file case — always representative)
-      2. First `model-00001-of-NNNNN.safetensors` shard (contains layer-0
-         which has all weight tensor name patterns we need)
-      3. Any `*.safetensors`
+      2. The middle shard for multi-shard models. The first shard tends to
+         contain embeddings + lm_head + early-layer norms (often left in
+         BF16/FP16 even when the bulk of the model is quantized to FP4 or
+         FP8). The middle shard typically holds real decoder/MoE-expert
+         weights, so its dtype histogram is more representative of the
+         "headline" quantization.
+      3. Any `*.safetensors` if naming doesn't follow the shard convention.
     """
     st_files = [s for s in siblings if s.filename.endswith(".safetensors")]
     if not st_files:
@@ -47,8 +51,8 @@ def pick_sample_shard(siblings: tuple[SiblingFile, ...]) -> SiblingFile | None:
         if s.filename == "model.safetensors":
             return s
 
-    first_shard = sorted(st_files, key=lambda s: s.filename)[0]
-    return first_shard
+    sorted_shards = sorted(st_files, key=lambda s: s.filename)
+    return sorted_shards[len(sorted_shards) // 2]
 
 
 def fetch_tensor_dtypes(

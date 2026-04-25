@@ -126,7 +126,7 @@ class TestFromSafetensorsDtypes:
         assert fp.scheme == "AWQ_INT4"
 
     def test_fp4_fp8_mixed(self):
-        """DeepSeek-V4 pattern: FP4 + FP8 mixed."""
+        """DeepSeek-V4 pattern: FP4 + FP8 mixed (older toolchain naming)."""
         dtypes = {
             "model.layers.0.mlp.experts.0.w1.weight": "F4_E2M1",
             "model.layers.0.mlp.experts.0.w2.weight": "F4_E2M1",
@@ -136,6 +136,47 @@ class TestFromSafetensorsDtypes:
         fp = from_safetensors_dtypes(dtypes)
         assert fp is not None
         assert fp.scheme == "FP4_FP8_MIXED"
+
+    def test_mx_block_scaled_fp4_fp8(self):
+        """Real DeepSeek-V4-Flash pattern: MX block-scaled with F8_E8M0
+        scale tensors + I8 packed FP4 weights + a few F8_E4M3 layers.
+
+        This is the actual on-disk dtype profile we observed when fetching
+        the middle shard. Older heuristic missed it because there's no
+        literal F4_E2M1 dtype anywhere — the FP4 values are bit-packed into
+        I8 with a separate F8_E8M0 scale tensor per block.
+        """
+        dtypes = {
+            # Packed FP4 weights (the bulk)
+            "model.layers.5.mlp.experts.0.w1.weight": "I8",
+            "model.layers.5.mlp.experts.0.w2.weight": "I8",
+            "model.layers.5.mlp.experts.0.w3.weight": "I8",
+            # MX scale tensors (one per quantization block)
+            "model.layers.5.mlp.experts.0.w1.weight_scale": "F8_E8M0",
+            "model.layers.5.mlp.experts.0.w2.weight_scale": "F8_E8M0",
+            # FP8 sub-pack for some layers
+            "model.layers.5.self_attn.q_proj.weight": "F8_E4M3",
+            # Norms stay BF16
+            "model.layers.5.input_layernorm.weight": "BF16",
+        }
+        fp = from_safetensors_dtypes(dtypes)
+        assert fp is not None
+        assert fp.scheme == "FP4_FP8_MIXED"
+        assert "MX" in fp.evidence
+
+    def test_mxfp4_no_fp8_layers(self):
+        """Pure MXFP4 (block-scaled FP4, no FP8 sub-pack)."""
+        dtypes = {
+            "model.layers.0.mlp.gate_proj.weight": "I8",
+            "model.layers.0.mlp.gate_proj.weight_scale": "F8_E8M0",
+            "model.layers.0.mlp.up_proj.weight": "I8",
+            "model.layers.0.mlp.up_proj.weight_scale": "F8_E8M0",
+        }
+        fp = from_safetensors_dtypes(dtypes)
+        assert fp is not None
+        # MXFP4 maps to FP4_FP8_MIXED bpp anchor (closest existing scheme)
+        assert fp.scheme == "FP4_FP8_MIXED"
+        assert "MXFP4" in fp.evidence
 
     def test_pure_fp8(self):
         dtypes = {

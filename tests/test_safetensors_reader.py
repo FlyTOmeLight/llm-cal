@@ -39,7 +39,11 @@ class TestPickSampleShard:
         assert pick is not None
         assert pick.filename == "model.safetensors"
 
-    def test_first_shard_by_name(self):
+    def test_picks_middle_shard(self):
+        """Middle shards have decoder layers / MoE experts; first usually has
+        embeddings + early-layer norms which often stay BF16/FP16 even in
+        quantized models. Sampling the first shard misled the FP4+FP8 detection
+        for DeepSeek-V4-Flash — middle is the honest representative."""
         siblings = (
             SiblingFile("model-00003-of-00010.safetensors", 1000),
             SiblingFile("model-00001-of-00010.safetensors", 1000),
@@ -47,7 +51,17 @@ class TestPickSampleShard:
         )
         pick = pick_sample_shard(siblings)
         assert pick is not None
-        assert pick.filename == "model-00001-of-00010.safetensors"
+        # 3 shards sorted: 00001, 00002, 00003 → middle index 1 → 00002
+        assert pick.filename == "model-00002-of-00010.safetensors"
+
+    def test_picks_middle_shard_even_count(self):
+        siblings = tuple(
+            SiblingFile(f"model-{i:05d}-of-00046.safetensors", 1000) for i in range(1, 47)
+        )
+        pick = pick_sample_shard(siblings)
+        assert pick is not None
+        # 46 shards, middle index = 23 → "00024"
+        assert pick.filename == "model-00024-of-00046.safetensors"
 
     def test_no_safetensors(self):
         siblings = (

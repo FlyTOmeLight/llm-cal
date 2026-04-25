@@ -8,6 +8,8 @@ on:
       - 'mkdocs.yml'
       - '.github/workflows/docs.yml'
       - 'README.md'
+      - 'src/llm_cal/**'
+      - 'scripts/generate_model_pages.py'
   workflow_dispatch:
 
 # No untrusted inputs (github.event.*, head_ref, etc.) are used below.
@@ -33,8 +35,16 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install mkdocs-material
-        run: pip install mkdocs-material
+      - name: Install mkdocs-material + llm-cal
+        run: |
+          pip install mkdocs-material
+          pip install -e .
+
+      - name: Generate model evaluation pages
+        # Hits HuggingFace API. HF_TOKEN is optional but increases rate limit.
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python scripts/generate_model_pages.py
 
       - name: Build site
         run: mkdocs build --strict

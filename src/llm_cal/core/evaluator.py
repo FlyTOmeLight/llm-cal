@@ -111,7 +111,14 @@ class Evaluator:
         total_params_est = estimate_total_params(profile)
         total_params = total_params_est.value
 
-        fingerprint = self._resolve_quant_fingerprint(artifact)
+        observed_bytes_for_fp = sum(
+            (s.size or 0) for s in artifact.siblings if s.filename.endswith(".safetensors")
+        )
+        fingerprint = self._resolve_quant_fingerprint(
+            artifact,
+            observed_bytes=observed_bytes_for_fp,
+            total_params=total_params if total_params > 0 else 0,
+        )
         weight = analyze(
             artifact.siblings,
             total_params=total_params if total_params > 0 else None,
@@ -280,26 +287,34 @@ class Evaluator:
         self._cache.set(key, artifact)
         return artifact
 
-    def _resolve_quant_fingerprint(self, artifact: ModelArtifact) -> QuantFingerprint | None:
+    def _resolve_quant_fingerprint(
+        self,
+        artifact: ModelArtifact,
+        observed_bytes: int,
+        total_params: int,
+    ) -> QuantFingerprint | None:
         """Resolve the quantization scheme via authoritative evidence.
 
         Priority:
           1. config.json `quantization_config` — explicit author declaration.
-             Free: no network call beyond what we already did.
+             Free, no extra network call. But if its predicted bytes are
+             wildly off (>15% from observed), fall through — config.json
+             can be incomplete or stale (DeepSeek-V4-Flash declares
+             `quant_method=fp8` but ships an FP4+FP8 mixed pack; trusting
+             the declaration produces a 45% wrong answer).
           2. safetensors file header — per-tensor dtype fingerprint. One
-             Range GET on the first shard. Catches DeepSeek-V4-Flash-style
-             mixed packs that don't declare in config.json.
+             Range GET on the first shard. Ground truth.
 
         Returns None on any failure. The reconciler falls back to bytes-only
         argmin in that case (v0.1.1 behavior).
         """
         fp = from_config(artifact.config)
-        if fp is not None:
+        if fp is not None and self._fingerprint_matches_bytes(fp, observed_bytes, total_params):
             return fp
 
         shard = pick_sample_shard(artifact.siblings)
         if shard is None:
-            return None
+            return fp  # safetensors unavailable — best we can do is the config hint
 
         dtypes = fetch_tensor_dtypes(
             source=artifact.source,
@@ -308,9 +323,30 @@ class Evaluator:
             shard_filename=shard.filename,
         )
         if not dtypes:
-            return None
+            return fp
 
-        return from_safetensors_dtypes(dtypes)
+        st_fp = from_safetensors_dtypes(dtypes)
+        # Header is ground truth — prefer it over config when both exist.
+        return st_fp if st_fp is not None else fp
+
+    @staticmethod
+    def _fingerprint_matches_bytes(
+        fp: QuantFingerprint, observed_bytes: int, total_params: int
+    ) -> bool:
+        """Sanity-check a fingerprint's predicted bytes against observed.
+
+        Returns True if the declared scheme's predicted bytes are within 15%
+        of observed. False means config.json is either lying or describes
+        only part of the model — we should consult safetensors instead.
+        """
+        from llm_cal.weight_analyzer import _QUANT_BPP
+
+        bpp = _QUANT_BPP.get(fp.scheme, 0.0)
+        if bpp <= 0 or total_params <= 0 or observed_bytes <= 0:
+            return True  # can't verify — don't penalize the fingerprint
+        predicted = bpp * total_params
+        rel_err = abs(observed_bytes - predicted) / predicted
+        return rel_err <= 0.15
 
     @staticmethod
     def _select_context_lengths(profile: ArchitectureProfile, override: int | None) -> list[int]:

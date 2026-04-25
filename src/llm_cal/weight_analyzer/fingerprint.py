@@ -154,6 +154,10 @@ _FP4_DTYPES = frozenset({"F4_E2M1", "F4"})  # F4 is used by some toolchains
 _FP16_DTYPES = frozenset({"F16"})
 _BF16_DTYPES = frozenset({"BF16"})
 _INT8_DTYPES = frozenset({"I8", "U8"})
+# F8_E8M0 is the 8-bit shared-exponent scaling factor used by MX-format
+# block-scaled quantization (MXFP4, MXFP8). Its presence alongside packed
+# integer weights (I8) is the signature of FP4 weight packing.
+_MX_SCALE_DTYPES = frozenset({"F8_E8M0"})
 
 
 def from_safetensors_dtypes(tensor_dtypes: dict[str, str]) -> QuantFingerprint | None:
@@ -210,8 +214,36 @@ def from_safetensors_dtypes(tensor_dtypes: dict[str, str]) -> QuantFingerprint |
     has_fp16 = any(dt in _FP16_DTYPES for dt in weight_dtypes)
     has_bf16 = any(dt in _BF16_DTYPES for dt in weight_dtypes)
     has_int8 = any(dt in _INT8_DTYPES for dt in weight_dtypes)
+    has_mx_scale = any(dt in _MX_SCALE_DTYPES for dt in tensor_dtypes.values())
 
-    # DeepSeek-V4-Flash pattern: real FP4 tensors mixed with FP8 tensors
+    # MX-format block-scaled quantization (DeepSeek-V4-Flash pattern):
+    # F8_E8M0 scale tensors + packed I8 weights, plus a layer of F8_E4M3 for
+    # the FP8 sub-pack. Detected via the scale-dtype signature.
+    if has_mx_scale and has_int8:
+        if has_fp8:
+            return QuantFingerprint(
+                scheme="FP4_FP8_MIXED",
+                source_type="safetensors_header",
+                evidence=(
+                    f"safetensors header: F8_E8M0 scale tensors + "
+                    f"{sum(dt in _INT8_DTYPES for dt in weight_dtypes)} packed-I8 "
+                    f"(FP4) weights + "
+                    f"{sum(dt in _FP8_DTYPES for dt in weight_dtypes)} FP8 weights — "
+                    f"MX block-scaled mixed pack"
+                ),
+            )
+        # MXFP4 only — nominally INT4 but with the MX scaling envelope
+        return QuantFingerprint(
+            scheme="FP4_FP8_MIXED",  # closest existing scheme; bpp ≈ 0.55 anchor
+            source_type="safetensors_header",
+            evidence=(
+                f"safetensors header: F8_E8M0 scale tensors + "
+                f"{sum(dt in _INT8_DTYPES for dt in weight_dtypes)} packed-I8 "
+                f"(FP4) weights — MXFP4 block-scaled"
+            ),
+        )
+
+    # Classic FP4 + FP8 mixed (older toolchains exposing F4 dtype directly)
     if has_fp4 and has_fp8:
         return QuantFingerprint(
             scheme="FP4_FP8_MIXED",
