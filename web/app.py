@@ -797,7 +797,7 @@ HERO_HTML = """
 
 CUSTOM_CSS = """
 /* Font stack — system fonts in both English + Chinese, no Gradio default serif */
-.gradio-container, .gradio-container * {
+* {
   font-family: -apple-system, BlinkMacSystemFont, "Inter", "Helvetica Neue",
     "PingFang SC", "Microsoft YaHei", "Segoe UI", Roboto, Arial, sans-serif !important;
 }
@@ -807,7 +807,7 @@ footer { display: none !important; }
 .show-api, .built-with, .settings { display: none !important; }
 
 /* Tighter overall padding so the page feels more like a tool, less like a docs site */
-.gradio-container { max-width: 1100px !important; }
+{ max-width: 1100px !important; }
 
 /* Hero section */
 .lc-hero {
@@ -832,8 +832,9 @@ footer { display: none !important; }
   line-height: 1.5;
 }
 .lc-hero-pitch {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  /* 4 cells: bad-card / arrow / good-card / summary on wide screens */
+  grid-template-columns: 1fr 30px 1fr 1.2fr;
   gap: 14px;
   align-items: stretch;
   padding: 0;
@@ -842,8 +843,26 @@ footer { display: none !important; }
 }
 .dark .lc-hero-pitch { color: #f1f5f9 !important; }
 
+/* Tablet: bad / arrow / good in row 1, summary full-width row 2 */
+@media (max-width: 900px) {
+  .lc-hero-pitch {
+    grid-template-columns: 1fr 28px 1fr;
+    grid-template-rows: auto auto;
+  }
+  .lc-pitch-summary { grid-column: 1 / -1; }
+}
+
+/* Mobile: stack everything, hide the arrow */
+@media (max-width: 540px) {
+  .lc-hero-pitch {
+    grid-template-columns: 1fr;
+    grid-template-rows: repeat(3, auto);
+  }
+  .lc-pitch-arrow { display: none; }
+  .lc-pitch-summary { grid-column: auto; }
+}
+
 .lc-pitch-card {
-  flex: 1 1 200px;
   padding: 14px 18px;
   border-radius: 10px;
   border: 1px solid #e5e7eb;
@@ -851,6 +870,7 @@ footer { display: none !important; }
   display: flex;
   flex-direction: column;
   justify-content: center;
+  min-width: 0;
 }
 .dark .lc-pitch-card { background: #111827; border-color: #374151; }
 .lc-pitch-bad  { border-left: 3px solid #b91c1c; }
@@ -910,16 +930,16 @@ footer { display: none !important; }
 }
 
 /* Make the primary button less Gradio-purple */
-.gradio-container button.primary,
-.gradio-container button[variant="primary"],
-.gradio-container .primary > button {
+button.primary,
+button[variant="primary"],
+.primary > button {
   background: #0f172a !important;
   border-color: #0f172a !important;
   color: #f8fafc !important;
   font-weight: 600 !important;
   letter-spacing: 0.01em;
 }
-.gradio-container button.primary:hover { background: #1e293b !important; }
+button.primary:hover { background: #1e293b !important; }
 
 /* Form labels — kill Gradio's purple chip; make labels plain uppercase small text */
 [data-testid="block-info"] {
@@ -948,49 +968,83 @@ footer { display: none !important; }
 .dark .info-text { color: #6b7280 !important; }
 
 /* Form input outer block — tighter padding, no decorative card outline */
-.gradio-container .block.padded {
+.block.padded {
   padding: 6px 0 !important;
   border: none !important;
   background: transparent !important;
   box-shadow: none !important;
 }
-.gradio-container .block.padded.show_textbox_border { padding: 6px 0 !important; }
+.block.padded.show_textbox_border { padding: 6px 0 !important; }
 
 /* Tighten row gap so inputs cluster more naturally */
-.gradio-container .form, .gradio-container .row { gap: 16px !important; }
+.form, .row { gap: 16px !important; }
+
+/* Tablet (≤900px): Gradio's gr.Row() flex-direction: row keeps 3 inputs
+   in one line. min-width: 320px forces 3-column rows to wrap to 2x1 +
+   1x1 at this size while leaving 2-column rows at 2-up. */
+@media (max-width: 900px) {
+  .form,
+  .row {
+    flex-wrap: wrap !important;
+  }
+  .form > .block,
+  .row > .block {
+    flex: 1 1 calc(50% - 12px) !important;
+    min-width: 320px !important;
+    max-width: 100% !important;
+  }
+}
+
+/* Mobile (≤540px): single-column form. */
+@media (max-width: 540px) {
+  .form,
+  .row {
+    flex-direction: column !important;
+  }
+  .form > .block,
+  .row > .block {
+    flex: 1 1 100% !important;
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+  { padding: 12px !important; }
+  .lc-hero-title { font-size: 26px !important; }
+  .lc-pitch-num-bad, .lc-pitch-num-good { font-size: 22px !important; }
+  .lc-pitch-arrow { display: none !important; }
+}
 
 /* Inputs themselves — light border, soft fill */
-.gradio-container input[type="text"],
-.gradio-container input[type="number"],
-.gradio-container input[type="password"],
-.gradio-container textarea,
-.gradio-container select {
+input[type="text"],
+input[type="number"],
+input[type="password"],
+textarea,
+select {
   border: 1px solid #e5e7eb !important;
   border-radius: 8px !important;
   background: #ffffff !important;
   font-size: 14px !important;
   padding: 10px 12px !important;
 }
-.dark .gradio-container input,
-.dark .gradio-container textarea,
-.dark .gradio-container select {
+.dark input,
+.dark textarea,
+.dark select {
   background: #111827 !important;
   border-color: #374151 !important;
 }
-.gradio-container input:focus,
-.gradio-container textarea:focus {
+input:focus,
+textarea:focus {
   border-color: #4f46e5 !important;
   outline: none !important;
   box-shadow: 0 0 0 3px rgba(79,70,229,0.12) !important;
 }
 
 /* Accordion — flatter, no purple bar */
-.gradio-container .accordion {
+.accordion {
   border: 1px solid #e5e7eb !important;
   border-radius: 8px !important;
   background: #fafafa !important;
 }
-.dark .gradio-container .accordion { background: #0f172a !important; border-color: #374151 !important; }
+.dark .accordion { background: #0f172a !important; border-color: #374151 !important; }
 
 /* Footer link strip */
 .lc-footer {
