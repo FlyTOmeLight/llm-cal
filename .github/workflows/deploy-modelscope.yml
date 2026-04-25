@@ -59,7 +59,6 @@ jobs:
       - name: Push to ModelScope Studio
         env:
           MODELSCOPE_TOKEN: ${{ secrets.MODELSCOPE_TOKEN }}
-        working-directory: deploy
         run: |
           if [ -z "$MODELSCOPE_TOKEN" ]; then
             echo "::error::MODELSCOPE_TOKEN secret is missing. Create one at"
@@ -67,15 +66,26 @@ jobs:
             echo "::error::and add it as a repo secret named MODELSCOPE_TOKEN."
             exit 1
           fi
-          git init -q -b master
+          # ModelScope's git server is GitLab-based and the default branch
+          # is protected against force-push. Clone the existing repo, mirror
+          # our deploy/ content into it, then do a normal fast-forward push.
+          STUDIO_URL="https://oauth2:${MODELSCOPE_TOKEN}@www.modelscope.cn/studios/${MS_USER}/${MS_STUDIO}.git"
+          git clone --depth 1 "$STUDIO_URL" clone
+          cd clone
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions"
-          git add .
+          # Wipe everything except .git so the workspace exactly mirrors
+          # our freshly assembled deploy/ tree.
+          find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
+          cp -r ../deploy/. .
+          git add -A
+          # Bail successfully if nothing actually changed (avoids empty commits)
+          if git diff --cached --quiet; then
+            echo "No content changes vs. studio HEAD — nothing to deploy."
+            exit 0
+          fi
           git commit -q -m "Auto-deploy from GitHub Actions"
-          # ModelScope Studios use 'master' as the default branch (not main).
-          # Auth via oauth2:<token>@www.modelscope.cn — same pattern HF uses.
-          git remote add studio "https://oauth2:${MODELSCOPE_TOKEN}@www.modelscope.cn/studios/${MS_USER}/${MS_STUDIO}.git"
-          git push --force studio master
+          git push origin HEAD
 
       - name: Summary
         if: success()
