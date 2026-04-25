@@ -921,14 +921,76 @@ footer { display: none !important; }
 }
 .gradio-container button.primary:hover { background: #1e293b !important; }
 
-/* Form labels — use a neutral chip instead of Gradio's purple */
-.gradio-container label > span {
-  font-size: 12px !important;
+/* Form labels — kill Gradio's purple chip; make labels plain uppercase small text */
+[data-testid="block-info"] {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  margin: 0 0 6px 0 !important;
+  font-size: 11px !important;
   font-weight: 600 !important;
-  color: #374151 !important;
-  letter-spacing: 0.02em;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  color: #6b7280 !important;
+  border-radius: 0 !important;
+  display: block !important;
 }
-.dark .gradio-container label > span { color: #d1d5db !important; }
+.dark [data-testid="block-info"] { color: #9ca3af !important; }
+
+/* Tooltip / info-text — smaller, denser, less in-your-face */
+.info-text {
+  font-size: 11.5px !important;
+  color: #9ca3af !important;
+  margin: 0 0 8px 0 !important;
+  line-height: 1.5 !important;
+  padding: 0 !important;
+}
+.dark .info-text { color: #6b7280 !important; }
+
+/* Form input outer block — tighter padding, no decorative card outline */
+.gradio-container .block.padded {
+  padding: 6px 0 !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.gradio-container .block.padded.show_textbox_border { padding: 6px 0 !important; }
+
+/* Tighten row gap so inputs cluster more naturally */
+.gradio-container .form, .gradio-container .row { gap: 16px !important; }
+
+/* Inputs themselves — light border, soft fill */
+.gradio-container input[type="text"],
+.gradio-container input[type="number"],
+.gradio-container input[type="password"],
+.gradio-container textarea,
+.gradio-container select {
+  border: 1px solid #e5e7eb !important;
+  border-radius: 8px !important;
+  background: #ffffff !important;
+  font-size: 14px !important;
+  padding: 10px 12px !important;
+}
+.dark .gradio-container input,
+.dark .gradio-container textarea,
+.dark .gradio-container select {
+  background: #111827 !important;
+  border-color: #374151 !important;
+}
+.gradio-container input:focus,
+.gradio-container textarea:focus {
+  border-color: #4f46e5 !important;
+  outline: none !important;
+  box-shadow: 0 0 0 3px rgba(79,70,229,0.12) !important;
+}
+
+/* Accordion — flatter, no purple bar */
+.gradio-container .accordion {
+  border: 1px solid #e5e7eb !important;
+  border-radius: 8px !important;
+  background: #fafafa !important;
+}
+.dark .gradio-container .accordion { background: #0f172a !important; border-color: #374151 !important; }
 
 /* Footer link strip */
 .lc-footer {
