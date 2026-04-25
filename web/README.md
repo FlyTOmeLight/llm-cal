@@ -8,7 +8,7 @@ sdk_version: 6.13.0
 app_file: app.py
 pinned: false
 license: apache-2.0
-short_description: LLM inference hardware calculator — honest-labeled, architecture-aware
+short_description: LLM inference sizing — honest, architecture-aware
 ---
 
 # llm-cal — LLM inference hardware calculator
