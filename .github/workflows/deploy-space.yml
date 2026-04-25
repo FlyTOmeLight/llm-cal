@@ -1,0 +1,89 @@
+name: Deploy to HuggingFace Space
+
+# One-time manual setup before this can run:
+#   1. Create the Space at https://huggingface.co/new-space (Gradio SDK,
+#      hardware: CPU basic free).
+#   2. Generate a write-scope token at https://huggingface.co/settings/tokens
+#   3. Add the token as a GitHub repo secret named HF_TOKEN.
+#   4. Adjust HF_USER / HF_SPACE below if your Space lives under a different
+#      owner or name.
+#
+# No untrusted inputs (github.event.*, head_ref, etc.) are used in run: blocks.
+# All values are either static strings or env: defined above.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - 'src/llm_cal/**'
+      - '.github/workflows/deploy-space.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  HF_USER: bluemoonsoldout
+  HF_SPACE: llm-cal
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Assemble Space directory
+        # Layout the Space expects:
+        #   /README.md          (HF Space frontmatter)
+        #   /app.py             (entry point)
+        #   /requirements.txt   (Space-side pip install)
+        #   /src/llm_cal/...    (vendored — sys.path.insert(0,...) in app.py
+        #                        picks this up before any PyPI-installed copy)
+        run: |
+          mkdir -p deploy/src
+          cp web/app.py          deploy/app.py
+          cp web/README.md       deploy/README.md
+          cp web/requirements.txt deploy/requirements.txt
+          rsync -a \
+            --exclude='__pycache__' \
+            --exclude='*.pyc' \
+            --exclude='*.pyo' \
+            src/llm_cal deploy/src/
+          test -f deploy/app.py
+          test -f deploy/README.md
+          test -f deploy/src/llm_cal/__init__.py
+          test -f deploy/src/llm_cal/hardware/gpu_database.yaml
+
+      - name: Push to HuggingFace Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        working-directory: deploy
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "::error::HF_TOKEN secret is missing. Create one at"
+            echo "::error::https://huggingface.co/settings/tokens (write scope)"
+            echo "::error::and add it as a repo secret named HF_TOKEN."
+            exit 1
+          fi
+          git init -q -b main
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
+          git add .
+          git commit -q -m "Auto-deploy from GitHub Actions"
+          git remote add space "https://x-access-token:${HF_TOKEN}@huggingface.co/spaces/${HF_USER}/${HF_SPACE}"
+          # --force because the Space is a deploy target, not a dev branch.
+          # If the Space was edited manually via the HF web UI, those edits
+          # will be overwritten — which is what we want for a CI-driven flow.
+          git push --force space main
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "### Deployed to HuggingFace Space" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "https://huggingface.co/spaces/${HF_USER}/${HF_SPACE}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Space rebuild typically takes 1-2 minutes." >> "$GITHUB_STEP_SUMMARY"
