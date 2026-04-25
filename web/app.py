@@ -20,10 +20,15 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# Ensure src/ is importable when run as a script (Spaces sets cwd to repo root,
-# but we also support `python web/app.py` from the repo root)
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "src"))
+# Ensure src/ is importable. Two layouts supported:
+#   1. Local dev:  /repo/web/app.py + /repo/src/        (parent.parent / src)
+#   2. HF Space:   /space/app.py    + /space/src/       (parent / src)
+# The deploy workflow flattens layout 1 → layout 2 when pushing to the Space.
+_HERE = Path(__file__).resolve().parent
+for _candidate in (_HERE / "src", _HERE.parent / "src"):
+    if _candidate.exists():
+        sys.path.insert(0, str(_candidate))
+        break
 
 import os  # noqa: E402
 
@@ -35,6 +40,8 @@ from llm_cal.core.explain import ExplainEntry  # noqa: E402
 from llm_cal.core.explain import build as build_explain  # noqa: E402
 from llm_cal.hardware.loader import load_database  # noqa: E402
 from llm_cal.llm_review.reviewer import run_review  # noqa: E402
+from llm_cal.model_source.huggingface import HuggingFaceSource  # noqa: E402
+from llm_cal.model_source.modelscope import ModelScopeSource  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Static data the UI needs
@@ -109,14 +116,18 @@ VENDOR_CHOICES_EN: list[str] = list(_VENDOR_TO_GPUS.keys())
 DEFAULT_VENDOR = "NVIDIA"
 DEFAULT_GPU = "H800"
 
-EXAMPLE_MODELS: list[tuple[str, str, str, str]] = [
-    ("deepseek-ai/DeepSeek-V4-Flash", "NVIDIA", "H800", "vllm"),
-    ("deepseek-ai/DeepSeek-V3", "NVIDIA", "H800", "vllm"),
-    ("Qwen/Qwen2.5-72B-Instruct", "NVIDIA", "H100", "vllm"),
-    ("Qwen/Qwen3-30B-A3B", "NVIDIA", "A100-80G", "vllm"),
-    ("mistralai/Mixtral-8x7B-v0.1", "NVIDIA", "H100", "vllm"),
-    ("microsoft/Phi-4", "NVIDIA", "RTX4090", "vllm"),
-    ("deepseek-ai/DeepSeek-V4-Flash", "Huawei Ascend", "910B4", "vllm"),
+EXAMPLE_MODELS: list[tuple[str, str, str, str, str]] = [
+    # (model_id, vendor, gpu, engine, source)
+    ("deepseek-ai/DeepSeek-V4-Flash", "NVIDIA", "H800", "vllm", "HuggingFace"),
+    ("deepseek-ai/DeepSeek-V3", "NVIDIA", "H800", "vllm", "HuggingFace"),
+    ("Qwen/Qwen2.5-72B-Instruct", "NVIDIA", "H100", "vllm", "HuggingFace"),
+    ("Qwen/Qwen3-30B-A3B", "NVIDIA", "A100-80G", "vllm", "HuggingFace"),
+    ("mistralai/Mixtral-8x7B-v0.1", "NVIDIA", "H100", "vllm", "HuggingFace"),
+    ("microsoft/Phi-4", "NVIDIA", "RTX4090", "vllm", "HuggingFace"),
+    ("deepseek-ai/DeepSeek-V4-Flash", "Huawei Ascend", "910B4", "vllm", "HuggingFace"),
+    # ModelScope examples — same models, China-side mirror.
+    ("Qwen/Qwen3-30B-A3B", "NVIDIA", "A100-80G", "vllm", "ModelScope"),
+    ("deepseek-ai/DeepSeek-V3", "Huawei Ascend", "910B4", "vllm", "ModelScope"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -557,7 +568,34 @@ def _render(report: EvaluationReport, locale: str) -> str:
         + perf_section
         + engine_section
         + cmd_section
+        + _render_star_cta(is_zh)
         + "</div>"
+    )
+
+
+def _render_star_cta(is_zh: bool) -> str:
+    """Tail-of-result CTA — shown right after the user got their answer,
+    which is when satisfaction is highest and the GitHub star ask reads as
+    'thanks for the tool' rather than 'please give me attention'."""
+    en_msg = "Saved you GPU-sizing math?"
+    zh_msg = "省了你 GPU 选型的时间？"
+    cta_en = "Star on GitHub"
+    cta_zh = "给个 Star"
+    text_top = zh_msg if is_zh else en_msg
+    text_bottom = en_msg if is_zh else zh_msg
+    cta = f"{cta_zh if is_zh else cta_en} · {cta_en if is_zh else cta_zh}"
+    return (
+        "<a class='lc-star-cta' href='https://github.com/FlyTOmeLight/llm-cal' "
+        "target='_blank' rel='noopener'>"
+        "<svg viewBox='0 0 16 16' width='18' height='18' aria-hidden='true' fill='currentColor'>"
+        "<path d='M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38v-1.33c-2.22.48-2.69-1.07-2.69-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.81.06 1.23.83 1.23.83.72 1.23 1.88.87 2.34.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.83-2.15-.08-.2-.36-1.02.08-2.13 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.11.16 1.93.08 2.13.51.56.83 1.27.83 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.19c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8z'/>"
+        "</svg>"
+        f"<div class='lc-star-cta-text'>"
+        f"<div class='lc-star-cta-q'>{text_top}</div>"
+        f"<div class='lc-star-cta-q-en'>{text_bottom}</div>"
+        f"</div>"
+        f"<div class='lc-star-cta-action'>{cta} →</div>"
+        "</a>"
     )
 
 
@@ -655,14 +693,18 @@ def _render_loading(is_zh: bool) -> str:
 # ---------------------------------------------------------------------------
 # Backend handler
 
-_evaluator: Evaluator | None = None
+_evaluators: dict[str, Evaluator] = {}
 
 
-def _get_evaluator() -> Evaluator:
-    global _evaluator
-    if _evaluator is None:
-        _evaluator = Evaluator()
-    return _evaluator
+def _get_evaluator(source_key: str) -> Evaluator:
+    """One evaluator per source — Evaluator caches an HfApi client internally
+    so we don't want to rebuild it every keystroke."""
+    if source_key not in _evaluators:
+        if source_key == "modelscope":
+            _evaluators[source_key] = Evaluator(source=ModelScopeSource())
+        else:
+            _evaluators[source_key] = Evaluator(source=HuggingFaceSource())
+    return _evaluators[source_key]
 
 
 def calculate(
@@ -671,6 +713,7 @@ def calculate(
     engine: str,
     context_length: int | None,
     lang: str,
+    source: str,
     gpu_count: int | None,
     input_tokens: int,
     output_tokens: int,
@@ -681,6 +724,8 @@ def calculate(
     refresh: bool,
     explain: bool,
     llm_review: bool,
+    hf_token: str,
+    ms_token: str,
     llm_api_key: str,
     llm_base_url: str,
     llm_model: str,
@@ -692,7 +737,7 @@ def calculate(
     if not model_id or not model_id.strip():
         return (
             _render_error(
-                "请输入 HuggingFace model id" if is_zh else "Enter a HuggingFace model id",
+                "请输入模型 ID" if is_zh else "Enter a model id",
                 is_zh,
             ),
             "",
@@ -701,60 +746,85 @@ def calculate(
     if not gpu:
         return (_render_error("请选择 GPU" if is_zh else "Pick a GPU", is_zh), "", "")
 
+    # Resolve source key. The radio shows e.g. "HuggingFace" / "ModelScope".
+    src_key = "modelscope" if "modelscope" in source.lower() else "huggingface"
+
+    # Inject user-provided tokens into env for the duration of this call only.
+    # We restore the prior values in the finally block so a token entered for
+    # one model doesn't leak into the next request from a different user.
+    token_env_keys = (
+        "HF_TOKEN",
+        "HUGGING_FACE_HUB_TOKEN",
+        "MODELSCOPE_API_TOKEN",
+        "MODELSCOPE_TOKEN",
+    )
+    old_token_env = {k: os.environ.get(k) for k in token_env_keys}
+    if hf_token and hf_token.strip():
+        os.environ["HF_TOKEN"] = hf_token.strip()
+    if ms_token and ms_token.strip():
+        os.environ["MODELSCOPE_API_TOKEN"] = ms_token.strip()
+
     try:
-        report = _get_evaluator().evaluate(
-            model_id=model_id.strip(),
-            gpu=gpu,
-            engine=engine,
-            gpu_count=gpu_count if gpu_count and gpu_count > 0 else None,
-            context_length=context_length if context_length and context_length > 0 else None,
-            refresh=refresh,
-            input_tokens=int(input_tokens) if input_tokens else 2000,
-            output_tokens=int(output_tokens) if output_tokens else 512,
-            target_tokens_per_sec=float(target_tps) if target_tps else 30.0,
-            prefill_utilization=float(prefill_util) if prefill_util else 0.40,
-            decode_bw_utilization=float(decode_bw_util) if decode_bw_util else 0.50,
-            concurrency_degradation=(
-                float(concurrency_degradation) if concurrency_degradation else 1.0
-            ),
-        )
-    except Exception as e:  # noqa: BLE001
-        return (_render_error(f"{type(e).__name__}: {e}", is_zh), "", "")
+        try:
+            report = _get_evaluator(src_key).evaluate(
+                model_id=model_id.strip(),
+                gpu=gpu,
+                engine=engine,
+                gpu_count=gpu_count if gpu_count and gpu_count > 0 else None,
+                context_length=context_length if context_length and context_length > 0 else None,
+                refresh=refresh,
+                input_tokens=int(input_tokens) if input_tokens else 2000,
+                output_tokens=int(output_tokens) if output_tokens else 512,
+                target_tokens_per_sec=float(target_tps) if target_tps else 30.0,
+                prefill_utilization=float(prefill_util) if prefill_util else 0.40,
+                decode_bw_utilization=float(decode_bw_util) if decode_bw_util else 0.50,
+                concurrency_degradation=(
+                    float(concurrency_degradation) if concurrency_degradation else 1.0
+                ),
+            )
+        except Exception as e:  # noqa: BLE001
+            return (_render_error(f"{type(e).__name__}: {e}", is_zh), "", "")
 
-    main_html = _render(report, locale)
-    explain_html = ""
-    llm_html = ""
+        main_html = _render(report, locale)
+        explain_html = ""
+        llm_html = ""
 
-    if explain or llm_review:
-        entries = build_explain(report)
-        if explain:
-            explain_html = _render_explain(entries, is_zh)
-        if llm_review:
-            # Only set env vars if user actually provided them — never persist
-            # them in env beyond this call's scope (they live in process env
-            # for the duration of the call, but we don't persist to disk).
-            old_env = {
-                "LLM_CAL_REVIEWER_API_KEY": os.environ.get("LLM_CAL_REVIEWER_API_KEY"),
-                "LLM_CAL_REVIEWER_BASE_URL": os.environ.get("LLM_CAL_REVIEWER_BASE_URL"),
-                "LLM_CAL_REVIEWER_MODEL": os.environ.get("LLM_CAL_REVIEWER_MODEL"),
-            }
-            try:
-                if llm_api_key.strip():
-                    os.environ["LLM_CAL_REVIEWER_API_KEY"] = llm_api_key.strip()
-                if llm_base_url.strip():
-                    os.environ["LLM_CAL_REVIEWER_BASE_URL"] = llm_base_url.strip()
-                if llm_model.strip():
-                    os.environ["LLM_CAL_REVIEWER_MODEL"] = llm_model.strip()
-                result = run_review(entries, locale=locale)  # type: ignore[arg-type]
-            finally:
-                for k, v in old_env.items():
-                    if v is None:
-                        os.environ.pop(k, None)
-                    else:
-                        os.environ[k] = v
-            llm_html = _render_llm_review(result.content, result.error, result.model, is_zh)
+        if explain or llm_review:
+            entries = build_explain(report)
+            if explain:
+                explain_html = _render_explain(entries, is_zh)
+            if llm_review:
+                # Only set env vars if user actually provided them — never persist
+                # them in env beyond this call's scope (they live in process env
+                # for the duration of the call, but we don't persist to disk).
+                old_env = {
+                    "LLM_CAL_REVIEWER_API_KEY": os.environ.get("LLM_CAL_REVIEWER_API_KEY"),
+                    "LLM_CAL_REVIEWER_BASE_URL": os.environ.get("LLM_CAL_REVIEWER_BASE_URL"),
+                    "LLM_CAL_REVIEWER_MODEL": os.environ.get("LLM_CAL_REVIEWER_MODEL"),
+                }
+                try:
+                    if llm_api_key.strip():
+                        os.environ["LLM_CAL_REVIEWER_API_KEY"] = llm_api_key.strip()
+                    if llm_base_url.strip():
+                        os.environ["LLM_CAL_REVIEWER_BASE_URL"] = llm_base_url.strip()
+                    if llm_model.strip():
+                        os.environ["LLM_CAL_REVIEWER_MODEL"] = llm_model.strip()
+                    result = run_review(entries, locale=locale)  # type: ignore[arg-type]
+                finally:
+                    for k, v in old_env.items():
+                        if v is None:
+                            os.environ.pop(k, None)
+                        else:
+                            os.environ[k] = v
+                llm_html = _render_llm_review(result.content, result.error, result.model, is_zh)
 
-    return main_html, explain_html, llm_html
+        return main_html, explain_html, llm_html
+    finally:
+        for k, v in old_token_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
 
 
 def show_loading(lang: str) -> tuple[str, str, str]:
@@ -769,10 +839,23 @@ THEME = gr.themes.Soft(primary_hue="indigo")
 
 HERO_HTML = """
 <div class='lc-hero'>
-  <div class='lc-hero-title'>llm-cal</div>
-  <div class='lc-hero-tagline'>
-    LLM inference hardware calculator · 大模型推理硬件计算器<br>
-    Architecture-aware · Engine-aware · <strong>Honest-labeled</strong>
+  <div class='lc-hero-top'>
+    <div class='lc-hero-titleblock'>
+      <div class='lc-hero-title'>llm-cal</div>
+      <div class='lc-hero-tagline'>
+        LLM inference hardware calculator · 大模型推理硬件计算器<br>
+        Architecture-aware · Engine-aware · <strong>Honest-labeled</strong>
+      </div>
+    </div>
+    <a class='lc-hero-gh' href='https://github.com/FlyTOmeLight/llm-cal' target='_blank' rel='noopener'>
+      <svg viewBox='0 0 16 16' width='16' height='16' aria-hidden='true' fill='currentColor'>
+        <path d='M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38v-1.33c-2.22.48-2.69-1.07-2.69-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.81.06 1.23.83 1.23.83.72 1.23 1.88.87 2.34.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.83-2.15-.08-.2-.36-1.02.08-2.13 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.11.16 1.93.08 2.13.51.56.83 1.27.83 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.19c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8z'/>
+      </svg>
+      <span class='lc-hero-gh-text'>GitHub</span>
+      <img class='lc-hero-gh-stars' alt='stars'
+        src='https://img.shields.io/github/stars/FlyTOmeLight/llm-cal?style=flat-square&logo=&label=&color=eef2ff&labelColor=eef2ff'
+        loading='lazy' />
+    </a>
   </div>
   <div class='lc-hero-pitch'>
     <div class='lc-pitch-card lc-pitch-bad'>
@@ -806,8 +889,16 @@ CUSTOM_CSS = """
 footer { display: none !important; }
 .show-api, .built-with, .settings { display: none !important; }
 
-/* Tighter overall padding so the page feels more like a tool, less like a docs site */
-{ max-width: 1100px !important; }
+/* Tighter overall padding + center on wide screens — without margin:auto the
+   container left-aligns and leaves ~800px empty on 1920+ displays.
+   width:100% makes it shrink to viewport when narrower than max-width
+   (otherwise on mobile align-items:stretch + max-width overflows). */
+.gradio-container {
+  max-width: 1100px !important;
+  width: 100% !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
 
 /* Hero section */
 .lc-hero {
@@ -816,6 +907,55 @@ footer { display: none !important; }
   border-bottom: 1px solid #e5e7eb;
 }
 .dark .lc-hero { border-bottom-color: #374151; }
+
+/* Top row: title block (left) + GitHub link (right). On mobile the GH link
+   wraps to its own line above or below the title — order kept so it stays
+   visible above the fold. */
+.lc-hero-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.lc-hero-titleblock {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+.lc-hero-gh {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  border-radius: 999px;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  color: #4338ca !important;
+  text-decoration: none !important;
+  white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  flex: 0 0 auto;
+}
+.lc-hero-gh:hover {
+  background: #e0e7ff;
+  border-color: #a5b4fc;
+}
+.dark .lc-hero-gh {
+  background: #1e1b4b;
+  border-color: #3730a3;
+  color: #c7d2fe !important;
+}
+.dark .lc-hero-gh:hover { background: #312e81; border-color: #4338ca; }
+.lc-hero-gh svg { display: block; }
+.lc-hero-gh-stars {
+  height: 18px;
+  vertical-align: middle;
+  border-radius: 4px;
+}
+
 .lc-hero-title {
   font-size: 32px !important;
   font-weight: 800 !important;
@@ -873,10 +1013,11 @@ footer { display: none !important; }
   min-width: 0;
 }
 .dark .lc-pitch-card { background: #111827; border-color: #374151; }
-.lc-pitch-bad  { border-left: 3px solid #b91c1c; }
-.lc-pitch-good { border-left: 3px solid #15803d; }
-.dark .lc-pitch-bad  { border-left-color: #f87171; }
-.dark .lc-pitch-good { border-left-color: #4ade80; }
+/* Subtle accent bar on the left, not a screaming red/green border */
+.lc-pitch-bad  { border-left: 3px solid #cbd5e1; }
+.lc-pitch-good { border-left: 3px solid #4f46e5; }
+.dark .lc-pitch-bad  { border-left-color: #475569; }
+.dark .lc-pitch-good { border-left-color: #818cf8; }
 
 .lc-pitch-tool {
   font-size: 12px !important;
@@ -908,38 +1049,56 @@ footer { display: none !important; }
   flex: 1 1 200px;
   padding: 14px 18px;
   border-radius: 10px;
-  background: #0f172a;
-  color: #f8fafc !important;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
   display: flex;
   flex-direction: column;
   justify-content: center;
 }
-.dark .lc-pitch-summary { background: #1e293b; }
+.dark .lc-pitch-summary { background: #1e1b4b; border-color: #3730a3; }
 .lc-pitch-model {
   font-size: 11px !important;
   font-weight: 600 !important;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #94a3b8 !important;
+  color: #6366f1 !important;
   margin-bottom: 4px;
 }
+.dark .lc-pitch-model { color: #a5b4fc !important; }
 .lc-pitch-result {
   font-size: 14px !important;
   font-weight: 700 !important;
-  color: #f8fafc !important;
+  color: #312e81 !important;
 }
+.dark .lc-pitch-result { color: #e0e7ff !important; }
 
-/* Make the primary button less Gradio-purple */
+/* Primary button — match the indigo theme; constrain width so it's not a billboard */
 button.primary,
 button[variant="primary"],
 .primary > button {
-  background: #0f172a !important;
-  border-color: #0f172a !important;
-  color: #f8fafc !important;
+  background: #4f46e5 !important;
+  border-color: #4f46e5 !important;
+  color: #ffffff !important;
   font-weight: 600 !important;
   letter-spacing: 0.01em;
+  border-radius: 8px !important;
+  padding: 10px 28px !important;
 }
-button.primary:hover { background: #1e293b !important; }
+button.primary:hover,
+button[variant="primary"]:hover,
+.primary > button:hover { background: #4338ca !important; border-color: #4338ca !important; }
+
+/* The wrapper around the Calculate button — center it, give it sane width */
+.lc-submit-wrap {
+  display: flex !important;
+  justify-content: center !important;
+  margin: 20px 0 8px 0 !important;
+}
+.lc-submit-wrap button {
+  min-width: 220px !important;
+  max-width: 320px !important;
+  width: auto !important;
+}
 
 /* Form labels — kill Gradio's purple chip; make labels plain uppercase small text */
 [data-testid="block-info"] {
@@ -957,24 +1116,33 @@ button.primary:hover { background: #1e293b !important; }
 }
 .dark [data-testid="block-info"] { color: #9ca3af !important; }
 
-/* Tooltip / info-text — smaller, denser, less in-your-face */
+/* Tooltip / info-text — single line, secondary color, no italic */
 .info-text {
-  font-size: 11.5px !important;
-  color: #9ca3af !important;
-  margin: 0 0 8px 0 !important;
-  line-height: 1.5 !important;
+  font-size: 11px !important;
+  color: #94a3b8 !important;
+  margin: 0 0 4px 0 !important;
+  line-height: 1.4 !important;
   padding: 0 !important;
+  font-style: normal !important;
+  white-space: normal !important;
 }
-.dark .info-text { color: #6b7280 !important; }
+.info-text br { display: none !important; }
+.dark .info-text { color: #64748b !important; }
 
-/* Form input outer block — tighter padding, no decorative card outline */
-.block.padded {
-  padding: 6px 0 !important;
-  border: none !important;
+/* Kill Gradio's grey form-panel chrome entirely — labels + inputs float on the page */
+.block,
+.block.padded,
+.block.gradio-container,
+.form,
+.row,
+[data-testid="block"] {
   background: transparent !important;
+  border: none !important;
   box-shadow: none !important;
 }
-.block.padded.show_textbox_border { padding: 6px 0 !important; }
+.block.padded { padding: 6px 0 !important; }
+.form { padding: 0 !important; }
+.row { padding: 0 !important; }
 
 /* Tighten row gap so inputs cluster more naturally */
 .form, .row { gap: 16px !important; }
@@ -1007,7 +1175,7 @@ button.primary:hover { background: #1e293b !important; }
     min-width: 0 !important;
     width: 100% !important;
   }
-  { padding: 12px !important; }
+  .gradio-container { padding: 12px !important; }
   .lc-hero-title { font-size: 26px !important; }
   .lc-pitch-num-bad, .lc-pitch-num-good { font-size: 22px !important; }
   .lc-pitch-arrow { display: none !important; }
@@ -1038,13 +1206,124 @@ textarea:focus {
   box-shadow: 0 0 0 3px rgba(79,70,229,0.12) !important;
 }
 
-/* Accordion — flatter, no purple bar */
-.accordion {
+/* Accordion — Gradio 6 has no .accordion class; the only signal is a .block
+   that *contains* a button.label-wrap. Use :has() to match precisely. */
+.block.padded:has(> button.label-wrap) {
+  background: #ffffff !important;
+  border: 1px solid #e5e7eb !important;
+  border-radius: 10px !important;
+  margin: 14px 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+.dark .block.padded:has(> button.label-wrap) {
+  background: #111827 !important;
+  border-color: #374151 !important;
+}
+button.label-wrap {
+  background: #f8fafc !important;
+  padding: 14px 18px !important;
+  font-weight: 600 !important;
+  font-size: 14px !important;
+  color: #1f2937 !important;
+  width: 100% !important;
+  text-align: left !important;
+  cursor: pointer !important;
+  border: none !important;
+  border-bottom: 1px solid #e5e7eb !important;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  letter-spacing: 0.01em;
+}
+.dark button.label-wrap {
+  background: #1e293b !important;
+  color: #f1f5f9 !important;
+  border-bottom-color: #374151 !important;
+}
+button.label-wrap:hover { background: #f1f5f9 !important; }
+.dark button.label-wrap:hover { background: #334155 !important; }
+/* Sibling content of the header (the body when expanded) */
+.block.padded:has(> button.label-wrap) > *:not(button.label-wrap) {
+  padding: 16px 18px !important;
+  background: #ffffff !important;
+}
+.dark .block.padded:has(> button.label-wrap) > *:not(button.label-wrap) {
+  background: #111827 !important;
+}
+
+/* gr.Examples table — the default Gradio render is a raw HTML table with black
+   borders and no hover state. Style it to match the rest of the page. */
+.gradio-dataset,
+[data-testid="dataset"] {
+  margin-top: 24px !important;
+  background: transparent !important;
+  border: none !important;
+}
+.gradio-dataset table,
+[data-testid="dataset"] table {
+  border-collapse: collapse !important;
   border: 1px solid #e5e7eb !important;
   border-radius: 8px !important;
-  background: #fafafa !important;
+  overflow: hidden !important;
+  font-size: 13px !important;
+  width: 100% !important;
 }
-.dark .accordion { background: #0f172a !important; border-color: #374151 !important; }
+.dark .gradio-dataset table,
+.dark [data-testid="dataset"] table { border-color: #374151 !important; }
+.gradio-dataset thead,
+[data-testid="dataset"] thead { background: #f9fafb !important; }
+.dark .gradio-dataset thead,
+.dark [data-testid="dataset"] thead { background: #111827 !important; }
+.gradio-dataset th,
+[data-testid="dataset"] th {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  color: #6b7280 !important;
+  text-align: left !important;
+  padding: 10px 12px !important;
+  border: none !important;
+  border-bottom: 1px solid #e5e7eb !important;
+}
+.gradio-dataset td,
+[data-testid="dataset"] td {
+  padding: 9px 12px !important;
+  border: none !important;
+  border-bottom: 1px solid #f3f4f6 !important;
+  color: #1f2937 !important;
+  font-size: 13px !important;
+  background: transparent !important;
+  cursor: pointer !important;
+}
+.dark .gradio-dataset td,
+.dark [data-testid="dataset"] td {
+  color: #e5e7eb !important;
+  border-bottom-color: #1f2937 !important;
+}
+.gradio-dataset tbody tr:last-child td,
+[data-testid="dataset"] tbody tr:last-child td { border-bottom: none !important; }
+.gradio-dataset tbody tr:hover,
+[data-testid="dataset"] tbody tr:hover { background: rgba(79, 70, 229, 0.04) !important; }
+.dark .gradio-dataset tbody tr:hover,
+.dark [data-testid="dataset"] tbody tr:hover { background: rgba(129, 140, 248, 0.08) !important; }
+
+/* Examples header label — Gradio puts a "Try one of these" label above */
+.gradio-dataset > .label,
+[data-testid="dataset"] > .label,
+.gradio-dataset .block-label,
+.dataset .block-label {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.06em !important;
+  color: #6b7280 !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 0 6px 0 !important;
+  margin-bottom: 0 !important;
+}
 
 /* Footer link strip */
 .lc-footer {
@@ -1258,6 +1537,63 @@ textarea:focus {
   border-radius: 0 !important;
 }
 
+/* Star-on-GitHub CTA — shown at the bottom of the result, capturing the
+   peak-satisfaction moment. Card-style with indigo accent so it reads as
+   "thanks", not as a banner ad. */
+.lc-star-cta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 28px 0 8px 0;
+  padding: 14px 18px;
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  border-radius: 10px;
+  text-decoration: none !important;
+  color: #312e81 !important;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+.lc-star-cta:hover {
+  background: #e0e7ff;
+  border-color: #a5b4fc;
+}
+.lc-star-cta:active { transform: scale(0.995); }
+.dark .lc-star-cta {
+  background: #1e1b4b;
+  border-color: #3730a3;
+  color: #c7d2fe !important;
+}
+.dark .lc-star-cta:hover { background: #312e81; }
+.lc-star-cta svg { flex: 0 0 auto; color: #4338ca; }
+.dark .lc-star-cta svg { color: #a5b4fc; }
+.lc-star-cta-text { flex: 1 1 auto; min-width: 0; }
+.lc-star-cta-q {
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  line-height: 1.3;
+  color: #312e81 !important;
+}
+.dark .lc-star-cta-q { color: #e0e7ff !important; }
+.lc-star-cta-q-en {
+  font-size: 12px !important;
+  color: #6366f1 !important;
+  margin-top: 2px;
+  line-height: 1.3;
+}
+.dark .lc-star-cta-q-en { color: #a5b4fc !important; }
+.lc-star-cta-action {
+  flex: 0 0 auto;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  color: #4338ca !important;
+  white-space: nowrap;
+}
+.dark .lc-star-cta-action { color: #c7d2fe !important; }
+@media (max-width: 540px) {
+  .lc-star-cta { flex-wrap: wrap; gap: 10px; }
+  .lc-star-cta-action { flex-basis: 100%; }
+}
+
 /* Loading + error */
 .lc-loading {
   display: flex;
@@ -1343,14 +1679,14 @@ textarea:focus {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  background: rgba(219, 39, 119, 0.06);
-  border: 1px solid rgba(219, 39, 119, 0.18);
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
   font-size: 12px !important;
-  color: #be185d !important;
+  color: #4b5563 !important;
   margin-bottom: 12px;
 }
-.dark .lc-llm-banner { color: #f9a8d4 !important; background: rgba(219, 39, 119, 0.12); }
+.dark .lc-llm-banner { color: #d1d5db !important; background: #111827; border-color: #374151; }
 .lc-llm-model {
   font-size: 11px !important;
   color: #6b7280 !important;
@@ -1372,11 +1708,6 @@ textarea:focus {
 """
 
 
-def _bi(en: str, zh: str) -> str:
-    """Two-line bilingual tooltip — EN above, 中文 below."""
-    return f"{en}\n{zh}"
-
-
 def _build_ui() -> gr.Blocks:
     with gr.Blocks(title="llm-cal — LLM hardware calculator") as demo:
         gr.HTML(HERO_HTML)
@@ -1386,11 +1717,15 @@ def _build_ui() -> gr.Blocks:
             model_id = gr.Textbox(
                 label="Model ID · 模型 ID",
                 placeholder="e.g. deepseek-ai/DeepSeek-V4-Flash",
-                info=_bi(
-                    "HuggingFace repo id (owner/name). Gated models need HF_TOKEN.",
-                    "HuggingFace 仓库 ID（owner/name 格式），私有/Gated 模型需要 HF_TOKEN。",
-                ),
+                info="Repo id · 仓库 ID（owner/name）",
                 scale=3,
+            )
+            source = gr.Radio(
+                choices=["HuggingFace", "ModelScope"],
+                value="HuggingFace",
+                label="Source · 来源",
+                info="Where to pull model metadata · 拉取来源",
+                scale=2,
             )
 
         with gr.Row():
@@ -1398,20 +1733,14 @@ def _build_ui() -> gr.Blocks:
                 choices=VENDOR_CHOICES_EN,
                 value=DEFAULT_VENDOR,
                 label="GPU vendor · GPU 厂商",
-                info=_bi(
-                    "Pick brand first; the model list filters accordingly. 11 vendors covered.",
-                    "先选厂商，下方型号列表会跟着筛选。共 11 家。",
-                ),
+                info="11 vendors covered · 共 11 家",
                 scale=1,
             )
             gpu = gr.Dropdown(
                 choices=_VENDOR_TO_GPUS[DEFAULT_VENDOR],
                 value=DEFAULT_GPU,
                 label="GPU model · GPU 型号",
-                info=_bi(
-                    "Target hardware. e.g. H800 (China-regulated H100), 910B4 (Ascend), MI300X (AMD).",
-                    "目标硬件型号。例如 H800（中国合规版 H100）、910B4（昇腾）、MI300X（AMD）。",
-                ),
+                info="Target hardware · 目标硬件型号",
                 scale=2,
                 allow_custom_value=True,
             )
@@ -1421,126 +1750,97 @@ def _build_ui() -> gr.Blocks:
                 choices=["vllm", "sglang"],
                 value="vllm",
                 label="Engine · 引擎",
-                info=_bi(
-                    "Inference engine. Drives generated command + required-flag source.",
-                    "推理引擎。决定生成命令的形式 + 必需 flag 来源（compat 矩阵）。",
-                ),
+                info="Inference engine · 推理引擎",
             )
             context_length = gr.Number(
                 label="Context length · Context 长度",
                 value=None,
                 precision=0,
-                info=_bi(
-                    "Empty = show 4K/32K/128K/1M. Set = single-context override.",
-                    "留空 = 显示 4K/32K/128K/1M（如模型支持）。填了就只显示这一个 context。",
-                ),
+                info="Empty = 4K/32K/128K/1M · 留空显示全档",
             )
             lang = gr.Radio(
                 choices=["English", "中文"],
                 value="English",
                 label="Output language · 输出语言",
-                info=_bi(
-                    "Affects label translations + explanations in the result area below.",
-                    "影响下方结果区的标签翻译和说明文字。",
-                ),
+                info="Result area only · 仅影响下方结果区",
             )
 
         # ---- Performance tuning (collapsible) ----------------------------
         with gr.Accordion("Performance tuning · 性能参数", open=False):
-            gr.Markdown(
-                "_SLA assumptions + empirical coefficients — affects prefill latency, "
-                "decode throughput, and concurrency estimates._<br>"
-                "_SLA 假设和经验系数。改了会同步影响 prefill 延迟、decode 吞吐和并发上限。_"
-            )
             with gr.Row():
                 input_tokens = gr.Number(
                     label="Input tokens · 输入 tokens",
                     value=2000,
                     precision=0,
-                    info=_bi(
-                        "Prefill budget. Default 2000 (typical chat/RAG context).",
-                        "Prefill 预算。默认 2000（典型对话/RAG 上下文）。",
-                    ),
+                    info="Prefill budget · Prefill 预算",
                 )
                 output_tokens = gr.Number(
                     label="Output tokens · 输出 tokens",
                     value=512,
                     precision=0,
-                    info=_bi(
-                        "Decode budget per request. Default 512.",
-                        "Decode 预算。默认 512。",
-                    ),
+                    info="Decode budget · Decode 预算",
                 )
                 target_tps = gr.Number(
                     label="Target tok/s/user · 单用户目标 tok/s",
                     value=30.0,
-                    info=_bi(
-                        "SLA per user. Drives the L bound. 30 ≈ smooth reading speed.",
-                        "单用户 decode SLA。决定 L 上界。30 ≈ 流畅阅读速度。",
-                    ),
+                    info="SLA per user · 单用户 SLA（30 ≈ 流畅阅读）",
                 )
             with gr.Row():
                 prefill_util = gr.Number(
                     label="Prefill util · Prefill 利用率",
                     value=0.40,
-                    info=_bi(
-                        "Compute utilization 0–1. 0.40 = vLLM paper baseline.",
-                        "算力利用率（0–1）。0.40 是 vLLM 论文经验值。",
-                    ),
+                    info="0–1 · 0.40 = vLLM paper baseline",
                 )
                 decode_bw_util = gr.Number(
                     label="Decode BW util · Decode 带宽利用率",
                     value=0.50,
-                    info=_bi(
-                        "Memory-BW utilization 0–1. 0.50 = community median.",
-                        "显存带宽利用率（0–1）。0.50 是社区实测中位。",
-                    ),
+                    info="0–1 · 0.50 = community median",
                 )
                 concurrency_degradation = gr.Number(
                     label="Concurrency degradation · 并发衰减",
                     value=1.0,
-                    info=_bi(
-                        "1.0 = honest baseline. 1.67 if engine drops to 60% efficiency under load.",
-                        "1.0 = 诚实基线。1.67 表示满载下掉到 60% 效率。",
-                    ),
+                    info="1.0 = honest · 1.67 = 60% efficiency under load",
                 )
 
         # ---- Advanced (collapsible) --------------------------------------
         with gr.Accordion("Advanced · 高级", open=False):
             with gr.Row():
+                hf_token = gr.Textbox(
+                    label="HF_TOKEN",
+                    value="",
+                    placeholder="hf_...",
+                    type="password",
+                    info="For gated HF models · 私有 HF 模型用",
+                )
+                ms_token = gr.Textbox(
+                    label="MODELSCOPE_API_TOKEN",
+                    value="",
+                    placeholder="ms-...",
+                    type="password",
+                    info="For gated MS models · 私有 MS 模型用",
+                )
+            with gr.Row():
                 gpu_count = gr.Number(
                     label="Force GPU count · 强制 GPU 数",
                     value=None,
                     precision=0,
-                    info=_bi(
-                        "Empty = auto min/dev/prod recommendation. Set = single-count eval.",
-                        "留空 = 自动给 min/dev/prod 三档推荐。填了就只评估这一个 GPU 数。",
-                    ),
+                    info="Empty = auto min/dev/prod · 留空自动给三档",
                 )
                 refresh = gr.Checkbox(
                     label="Refresh cache · 刷新缓存",
                     value=False,
-                    info=_bi(
-                        "Bypass diskcache, re-fetch from HF. Useful when model just updated.",
-                        "跳过本地缓存，重新从 HF 拉取 metadata。模型刚更新时勾上。",
-                    ),
+                    info="Bypass diskcache · 跳过本地缓存",
                 )
             with gr.Row():
                 explain = gr.Checkbox(
                     label="--explain · 推导链",
                     value=False,
-                    info=_bi(
-                        "Output the full derivation trace: every formula, input, step, source.",
-                        "输出完整推导链：每个数字的公式、输入项（带 label）、计算步骤、来源。",
-                    ),
+                    info="Full derivation trace · 输出完整推导链",
                 )
                 llm_review = gr.Checkbox(
                     label="--llm-review · LLM 审计",
                     value=False,
-                    info=_bi(
-                        "Send the trace to an LLM for a second opinion. Needs API key below.",
-                        "把推导链发给 LLM 做第二意见审计。需要下方填 API key 等。",
-                    ),
+                    info="Second opinion from an LLM · 第二意见审计",
                 )
             with gr.Row():
                 llm_api_key = gr.Textbox(
@@ -1548,31 +1848,23 @@ def _build_ui() -> gr.Blocks:
                     value="",
                     placeholder="sk-...",
                     type="password",
-                    info=_bi(
-                        "Any OpenAI-compatible endpoint: OpenAI / DeepSeek / MiniMax / Moonshot.",
-                        "任意 OpenAI 兼容端点：OpenAI / DeepSeek / MiniMax / 月之暗面。",
-                    ),
+                    info="OpenAI-compatible endpoint · OpenAI 兼容端点",
                 )
                 llm_base_url = gr.Textbox(
                     label="LLM base URL · LLM 基地址",
                     value="",
                     placeholder="https://api.openai.com/v1",
-                    info=_bi(
-                        "e.g. https://api.deepseek.com/v1 or https://api.minimaxi.com/v1",
-                        "例如 https://api.deepseek.com/v1 或 https://api.minimaxi.com/v1",
-                    ),
+                    info="e.g. https://api.deepseek.com/v1",
                 )
                 llm_model = gr.Textbox(
                     label="LLM model · LLM 模型名",
                     value="",
                     placeholder="gpt-4o",
-                    info=_bi(
-                        "e.g. gpt-4o / deepseek-chat / MiniMax-M2 / moonshot-v1-32k",
-                        "如 gpt-4o / deepseek-chat / MiniMax-M2 / moonshot-v1-32k",
-                    ),
+                    info="e.g. gpt-4o / deepseek-chat / MiniMax-M2",
                 )
 
-        submit = gr.Button("Calculate · 计算", variant="primary", size="lg")
+        with gr.Row(elem_classes="lc-submit-wrap"):
+            submit = gr.Button("Calculate · 计算", variant="primary", size="lg")
 
         # Three output panes — main always shows, explain/llm-review only when toggled
         output_main = gr.HTML(label="Result")
@@ -1580,8 +1872,11 @@ def _build_ui() -> gr.Blocks:
         output_llm = gr.HTML(label="LLM review")
 
         gr.Examples(
-            examples=[[m, v, g, e, None, "English"] for m, v, g, e in EXAMPLE_MODELS],
-            inputs=[model_id, vendor, gpu, engine, context_length, lang],
+            examples=[
+                [m, v, g, e, None, "English", s]
+                for m, v, g, e, s in EXAMPLE_MODELS
+            ],
+            inputs=[model_id, vendor, gpu, engine, context_length, lang, source],
             label="Try one of these · 试试这些组合",
         )
 
@@ -1611,10 +1906,11 @@ def _build_ui() -> gr.Blocks:
         ).then(
             fn=calculate,
             inputs=[
-                model_id, gpu, engine, context_length, lang,
+                model_id, gpu, engine, context_length, lang, source,
                 gpu_count, input_tokens, output_tokens, target_tps,
                 prefill_util, decode_bw_util, concurrency_degradation,
                 refresh, explain, llm_review,
+                hf_token, ms_token,
                 llm_api_key, llm_base_url, llm_model,
             ],
             outputs=all_outputs,
