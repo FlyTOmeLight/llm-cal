@@ -22,7 +22,7 @@ from typing import Any
 
 import httpx
 
-from llm_cal.model_source.auth import get_hf_token
+from llm_cal.model_source.auth import get_hf_token, get_modelscope_token
 from llm_cal.model_source.base import SiblingFile
 
 _MAX_HEADER_BYTES = 16 * 1024 * 1024  # 16 MB — far above any realistic header
@@ -68,19 +68,14 @@ def fetch_tensor_dtypes(
     Returns a dict of `{tensor_name: dtype_string}` on success, None on any
     failure (network, parse, unexpected format). Non-fatal by design.
 
-    Only HuggingFace is supported in v0.1.2 — ModelScope URL scheme is
-    different and its tie-breaking path falls back to "no fingerprint".
+    Supports HuggingFace and ModelScope. Other sources fall back to None
+    so the reconciler still reports a verdict (without per-tensor refinement).
     """
-    if source != "huggingface":
+    url, headers = _build_request(source, model_id, revision, shard_filename, endpoint)
+    if url is None:
         return None
 
-    base = (endpoint or "https://huggingface.co").rstrip("/")
-    url = f"{base}/{model_id}/resolve/{revision}/{shard_filename}"
-
-    token = get_hf_token()
-    headers: dict[str, str] = {"Range": f"bytes=0-{_RANGE_FETCH_BYTES - 1}"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
+    headers = {**headers, "Range": f"bytes=0-{_RANGE_FETCH_BYTES - 1}"}
 
     try:
         resp = httpx.get(url, headers=headers, timeout=timeout_s, follow_redirects=True)
@@ -92,8 +87,38 @@ def fetch_tensor_dtypes(
     if resp.status_code not in (200, 206):
         return None
 
-    content = resp.content
-    return parse_header(content)
+    return parse_header(resp.content)
+
+
+def _build_request(
+    source: str,
+    model_id: str,
+    revision: str,
+    shard_filename: str,
+    endpoint: str | None,
+) -> tuple[str | None, dict[str, str]]:
+    """Compose URL + auth headers for the source. Returns (None, {}) on unknown."""
+    if source == "huggingface":
+        base = (endpoint or "https://huggingface.co").rstrip("/")
+        url = f"{base}/{model_id}/resolve/{revision}/{shard_filename}"
+        token = get_hf_token()
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        return url, headers
+    if source == "modelscope":
+        # ModelScope raw-file endpoint takes the path via query string and
+        # 302-redirects to the underlying OSS object. httpx follows the
+        # redirect; OSS honors Range natively.
+        base = (endpoint or "https://www.modelscope.cn").rstrip("/")
+        # httpx will encode query params; build manually to keep this function
+        # ergonomically a one-liner that matches the rest of the module.
+        url = (
+            f"{base}/api/v1/models/{model_id}/repo"
+            f"?FilePath={shard_filename}&Revision={revision}"
+        )
+        token = get_modelscope_token()
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        return url, headers
+    return None, {}
 
 
 def parse_header(content: bytes) -> dict[str, str] | None:

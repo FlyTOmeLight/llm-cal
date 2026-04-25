@@ -1,7 +1,7 @@
 # ADR-001: ModelScope Integration Strategy
 
-**Status:** PROPOSED (spike pending)
-**Date:** 2026-04-24
+**Status:** ACCEPTED — Option B (REST via httpx)
+**Date:** 2026-04-24 (proposed) / 2026-04-26 (accepted)
 **Owner:** FlyTOmeLight
 
 ## Context
@@ -36,16 +36,41 @@ until the decision is made.
 
 ## Decision
 
-_Pending spike results. This ADR will be moved to ACCEPTED with the chosen option
-once Week 0 validation completes. Criteria:_
+**Option B: Direct REST via `httpx`.**
 
-1. Can we list repo files + sizes with ≤2 API calls?
-2. Does the spike work under standard `MODELSCOPE_API_TOKEN` env?
-3. Is the minimal install footprint ≤ 20 MB?
+Rationale:
+
+1. **Surface area is tiny.** `llm-cal` only needs three calls — list files,
+   fetch `config.json`, Range-GET a safetensors header. The SDK's value (uniform
+   download/upload) doesn't apply here.
+2. **Install footprint stays flat.** `httpx` is already a hard dependency
+   (used by `weight_analyzer/safetensors_reader.py`). Adding the `modelscope`
+   SDK pulls torch/tf in some install paths, contradicting the calculator's
+   "lightweight" pitch.
+3. **Symmetry with HF hot path.** HF safetensors header reads are already
+   `httpx.get` with a Range header. ModelScope mirrors that exactly — the
+   redirect to OSS-signed URLs is transparent to httpx with `follow_redirects=True`.
+4. **Spike acceptance criteria all met:**
+   - ✅ Files + sizes in 1 call: `GET /api/v1/models/{owner}/{name}/repo/files?Recursive=true`
+   - ✅ `MODELSCOPE_API_TOKEN` works as `Authorization: Bearer {token}`
+   - ✅ Install footprint: 0 new deps (httpx was already required)
+
+Endpoints used:
+- `GET /api/v1/models/{model_id}` — model meta (best-effort `LatestSha`)
+- `GET /api/v1/models/{model_id}/repo/files` — file tree + sizes
+- `GET /api/v1/models/{model_id}/repo?FilePath=...&Revision=...` — raw file
+
+Wrapped envelope `{Code, Message, Data, Success}` is parsed defensively in
+`_extract_files()`, tolerant of both `Data.Files` and `Data` (list) shapes.
 
 ## Consequences
 
-- Blocks `src/llm_cal/model_source/modelscope.py` implementation until merged.
-- Dependency list in `pyproject.toml` may be adjusted downward if REST-only wins.
-- Shape of the error-handling matrix (`docs/error-handling.md`) depends on which
-  library throws which exceptions.
+- `src/llm_cal/model_source/modelscope.py` is now a real implementation
+  (~200 LOC), no longer a placeholder.
+- `pyproject.toml` does NOT add the `modelscope` SDK as a dependency.
+- Error mapping is symmetric with HF: 404 → `ModelNotFoundError`,
+  401/403 → `AuthRequiredError`, 429/timeout → `SourceUnavailableError`.
+- Web UI exposes the choice via a `Source · 来源` radio (HuggingFace / ModelScope).
+- CLI exposes it via `--source huggingface|modelscope`.
+- If ModelScope changes the wrapper field names (PascalCase has shifted in
+  past versions), `_extract_files` is the single place to extend.

@@ -173,11 +173,36 @@ class TestFetchTensorDtypes:
             )
         assert dtypes == {"x": "F16"}
 
-    def test_non_hf_source_returns_none(self):
-        """ModelScope path not supported in v0.1.2."""
+    def test_modelscope_happy_path(self):
+        """ModelScope: same Range GET, different URL + auth header."""
+        header = {"layer.weight": {"dtype": "F4_E2M1", "shape": [10], "data_offsets": [0, 10]}}
+        buf = _build_safetensors_bytes(header)
+
+        captured: dict = {}
+
+        def _capture(url, *args, **kwargs):
+            captured["url"] = url
+            captured["headers"] = kwargs.get("headers", {})
+            return httpx.Response(status_code=206, content=buf)
+
+        with patch("httpx.get", side_effect=_capture):
+            dtypes = fetch_tensor_dtypes(
+                source="modelscope",
+                model_id="Qwen/Qwen3-30B-A3B",
+                revision="master",
+                shard_filename="model-00003-of-00163.safetensors",
+            )
+        assert dtypes == {"layer.weight": "F4_E2M1"}
+        assert "modelscope.cn" in captured["url"]
+        assert "FilePath=model-00003-of-00163.safetensors" in captured["url"]
+        # Range header is always set on the request
+        assert captured["headers"].get("Range", "").startswith("bytes=0-")
+
+    def test_unknown_source_returns_none(self):
+        """Sources we don't recognize fall through silently."""
         assert (
             fetch_tensor_dtypes(
-                source="modelscope",
+                source="some-future-mirror",
                 model_id="foo",
                 revision="main",
                 shard_filename="model.safetensors",

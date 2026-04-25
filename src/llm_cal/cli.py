@@ -16,8 +16,11 @@ from llm_cal.llm_review.reviewer import run_review
 from llm_cal.model_source.base import (
     AuthRequiredError,
     ModelNotFoundError,
+    ModelSource,
     SourceUnavailableError,
 )
+from llm_cal.model_source.huggingface import HuggingFaceSource
+from llm_cal.model_source.modelscope import ModelScopeSource
 from llm_cal.output.formatter import (
     render,
     render_explain,
@@ -122,6 +125,14 @@ def main(
             "LLM_CAL_REVIEWER_MODEL (default gpt-4o)."
         ),
     ),
+    source: str = typer.Option(
+        "huggingface",
+        "--source",
+        help=(
+            "Model source: huggingface (default) | modelscope. "
+            "Auth via HF_TOKEN or MODELSCOPE_API_TOKEN env var."
+        ),
+    ),
 ) -> None:
     """Evaluate a model against target hardware."""
     if lang in ("en", "zh"):
@@ -144,7 +155,19 @@ def main(
         _err.print("[red]Missing option --gpu. Use --list-gpus to see choices.[/red]")
         raise typer.Exit(code=1)
 
-    evaluator = Evaluator()
+    src_obj: ModelSource
+    src_lower = source.lower()
+    if src_lower in ("hf", "huggingface"):
+        src_obj = HuggingFaceSource()
+    elif src_lower in ("ms", "modelscope"):
+        src_obj = ModelScopeSource()
+    else:
+        _err.print(
+            f"[red]Unknown --source '{source}'. Use 'huggingface' or 'modelscope'.[/red]"
+        )
+        raise typer.Exit(code=1)
+
+    evaluator = Evaluator(source=src_obj)
     try:
         report = evaluator.evaluate(
             model_id=model_id,
