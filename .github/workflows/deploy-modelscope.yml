@@ -1,0 +1,87 @@
+name: Deploy to ModelScope Studio
+
+# One-time manual setup before this can run:
+#   1. Create the Studio at https://modelscope.cn/studios/create
+#      Choose Gradio runtime, CPU basic.
+#   2. Generate a token at https://modelscope.cn/my/myaccesstoken
+#      (write scope — needed for git push).
+#   3. Add as GitHub repo secret: MODELSCOPE_TOKEN
+#   4. (Optional) Adjust MS_USER / MS_STUDIO below if your Studio uses a
+#      different owner or name.
+#
+# No untrusted inputs (github.event.*, head_ref, etc.) are used in run: blocks.
+# All values are either static strings, env: defined above, or secrets.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - 'src/llm_cal/**'
+      - '.github/workflows/deploy-modelscope.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  MS_USER: bluemoonsoldout
+  MS_STUDIO: llm-cal
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Assemble Studio directory
+        # ModelScope Studios expect the same flat layout as HF Spaces but the
+        # README frontmatter schema is different. We use README.modelscope.md
+        # (with deployspec / domain / language fields) instead of the HF one
+        # (with sdk / app_file fields).
+        run: |
+          mkdir -p deploy/src
+          cp web/app.py                  deploy/app.py
+          cp web/README.modelscope.md    deploy/README.md
+          cp web/requirements.txt        deploy/requirements.txt
+          rsync -a \
+            --exclude='__pycache__' \
+            --exclude='*.pyc' \
+            --exclude='*.pyo' \
+            src/llm_cal deploy/src/
+          test -f deploy/app.py
+          test -f deploy/README.md
+          test -f deploy/src/llm_cal/__init__.py
+          test -f deploy/src/llm_cal/hardware/gpu_database.yaml
+
+      - name: Push to ModelScope Studio
+        env:
+          MODELSCOPE_TOKEN: ${{ secrets.MODELSCOPE_TOKEN }}
+        working-directory: deploy
+        run: |
+          if [ -z "$MODELSCOPE_TOKEN" ]; then
+            echo "::error::MODELSCOPE_TOKEN secret is missing. Create one at"
+            echo "::error::https://modelscope.cn/my/myaccesstoken (write scope)"
+            echo "::error::and add it as a repo secret named MODELSCOPE_TOKEN."
+            exit 1
+          fi
+          git init -q -b master
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
+          git add .
+          git commit -q -m "Auto-deploy from GitHub Actions"
+          # ModelScope Studios use 'master' as the default branch (not main).
+          # Auth via oauth2:<token>@www.modelscope.cn — same pattern HF uses.
+          git remote add studio "https://oauth2:${MODELSCOPE_TOKEN}@www.modelscope.cn/studios/${MS_USER}/${MS_STUDIO}.git"
+          git push --force studio master
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "### Deployed to ModelScope Studio" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "https://modelscope.cn/studios/${MS_USER}/${MS_STUDIO}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Studio rebuild typically takes 2-3 minutes." >> "$GITHUB_STEP_SUMMARY"
