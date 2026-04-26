@@ -121,6 +121,24 @@ def estimate_prefill(
     )
 
 
+def _nvlink_efficiency(gpu: GPUSpec, num_gpus: int) -> float:
+    """Multiplier on cluster comm efficiency reflecting NVLink bandwidth.
+
+    Single-GPU has no TP all-reduce, so no penalty. H100 / B200 / H200 / A100-
+    SXM4 with full NVLink (>=900 GB/s aggregate, dropped to 600 for A100) get
+    ~1.0. Restricted-NVLink variants (H800: 400 GB/s, half of H100) pay ~8%.
+    PCIe-only cards (L40S, RTX) with no NVLink pay 20%.
+    """
+    if num_gpus <= 1:
+        return 1.0
+    nvlink = gpu.nvlink_bandwidth_gbps or 0
+    if nvlink >= 900:
+        return 1.0
+    if nvlink <= 0:
+        return 0.80
+    return 0.85 + 0.15 * (nvlink / 900.0)
+
+
 def estimate_decode(
     profile: ArchitectureProfile,
     total_weight_bytes: int,
@@ -157,8 +175,12 @@ def estimate_decode(
     effective_bw = bw_bytes_per_s * bw_utilization
     weight_per_gpu = max(1, total_weight_bytes // num_gpus)
     per_gpu_tps = effective_bw / weight_per_gpu
-    # Cluster-level: per-GPU × N × comm_efficiency (since requests are batched)
-    cluster_tps = per_gpu_tps * num_gpus * cluster_comm_efficiency
+    # Cluster-level: per-GPU × N × comm_efficiency × NVLink-aware penalty.
+    # NVLink penalty captures TP all-reduce overhead on cards with restricted
+    # interconnect (H800, PCIe-only). Single-GPU is unaffected.
+    nvlink_eff = _nvlink_efficiency(gpu, num_gpus)
+    effective_comm_eff = cluster_comm_efficiency * nvlink_eff
+    cluster_tps = per_gpu_tps * num_gpus * effective_comm_eff
 
     # MoE active-only optimistic view
     moe_active_weight: AnnotatedValue[int] | None = None
@@ -172,13 +194,13 @@ def estimate_decode(
         )
         if active_bytes > 0:
             active_per_gpu_tps = effective_bw / active_bytes
-            active_cluster_tps = active_per_gpu_tps * num_gpus * cluster_comm_efficiency
+            active_cluster_tps = active_per_gpu_tps * num_gpus * effective_comm_eff
             moe_active_tps = AnnotatedValue(
                 active_cluster_tps,
                 Label.ESTIMATED,
                 source=(
                     f"optimistic MoE active-only: effective_bw / {active_bytes:,} × "
-                    f"{num_gpus} × {cluster_comm_efficiency:.2f}"
+                    f"{num_gpus} × {effective_comm_eff:.3f}"
                 ),
             )
 
@@ -200,7 +222,8 @@ def estimate_decode(
             cluster_tps,
             Label.ESTIMATED,
             source=(
-                f"per-GPU × {num_gpus} GPUs × {cluster_comm_efficiency:.0%} cluster comm efficiency"
+                f"per-GPU × {num_gpus} GPUs × {cluster_comm_efficiency:.0%} comm × "
+                f"{nvlink_eff:.3f} NVLink penalty (NVLink={gpu.nvlink_bandwidth_gbps or 0} GB/s)"
             ),
         ),
         bw_utilization=bw_utilization,
