@@ -594,7 +594,9 @@ def _render_compare(reports: list[EvaluationReport], locale: str) -> str:
         f"</div></div>"
     )
 
-    # Metric definitions: (label_en, label_zh, value_fn, better=lower|higher|none)
+    # Metric definitions: (label_en, label_zh, value_fn, better=lower|higher|info, formatter)
+    # "info" rows are not contested — used for model-determined facts (same across
+    # GPUs by construction) or for descriptive cells like Bottleneck.
     def _max_concurrent(r: EvaluationReport) -> int | None:
         if not r.fleet:
             return None
@@ -607,11 +609,82 @@ def _render_compare(reports: list[EvaluationReport], locale: str) -> str:
         prod = next((o for o in r.fleet.options if o.tier == "prod"), None)
         return prod.gpu_count if prod else None
 
+    def _kv_per_user_128k(r: EvaluationReport) -> int | None:
+        av = r.kv_cache_by_context.get(131072)
+        return av.value if av is not None else None
+
+    def _native_precision_score(r: EvaluationReport) -> int | None:
+        g = r.gpu_spec
+        if g is None:
+            return None
+        return (1 if g.fp8_support else 0) + (1 if g.fp4_support else 0)
+
+    def _fmt_native(v: int | None) -> str:
+        if v is None:
+            return "—"
+        return {0: "FP16 only", 1: "FP8", 2: "FP8 + FP4"}.get(v, str(v))
+
+    def _max_context_tokens(r: EvaluationReport) -> int | None:
+        """Effective max context the model claims to support.
+
+        In modern HF configs (LLaMA 3+, DeepSeek V3+, Qwen2.5+), the field
+        max_position_embeddings already reflects the post-RoPE/YaRN-scaling
+        window. rope_scaling_factor is recorded for provenance but must NOT
+        be multiplied in again — that double-counts.
+        """
+        pos = r.profile.position
+        if pos is None or pos.max_position_embeddings is None:
+            return None
+        return int(pos.max_position_embeddings)
+
+    def _fmt_context(v: int | None) -> str:
+        """Binary-base formatting so 131072 reads as '128K' not '131K'."""
+        if v is None:
+            return "—"
+        if v >= 1024 * 1024:
+            return f"{v / (1024 * 1024):.1f}M".replace(".0M", "M")
+        if v >= 1024:
+            return f"{v // 1024}K"
+        return str(v)
+
+    def _cluster_qps(r: EvaluationReport) -> float | None:
+        """Steady-state queries/sec the cluster sustains:
+        QPS = cluster_decode_tokens_per_sec / output_tokens_per_request."""
+        if not r.decode or r.decode.cluster_tokens_per_sec.value <= 0:
+            return None
+        out = r.perf_output_tokens or 512
+        if out <= 0:
+            return None
+        return r.decode.cluster_tokens_per_sec.value / out
+
     metrics = [
-        # (en, zh, getter, better, formatter)
+        # ── Model-determined rows (info; identical across GPUs by definition) ──
         ("Quantization", "量化方案",
-         lambda r: r.weight.quantization_guess.value, "none",
+         lambda r: r.weight.quantization_guess.value, "info",
          lambda v: _esc(str(v)) if v else "—"),
+        ("Weights total", "权重总量",
+         lambda r: r.weight.total_bytes.value, "info",
+         lambda v: _fmt_bytes(v) if v else "—"),
+        ("KV / user @ 128K", "KV / 用户 @ 128K",
+         _kv_per_user_128k, "info",
+         lambda v: _fmt_bytes(v) if v is not None else "—"),
+        ("Max context", "最大上下文",
+         _max_context_tokens, "info",
+         _fmt_context),
+        # ── GPU hardware specs (contested) ──
+        ("HBM / card", "单卡显存",
+         lambda r: r.gpu_spec.memory_gb if r.gpu_spec else None, "higher",
+         lambda v: f"{v} GB" if v is not None else "—"),
+        ("HBM bandwidth", "显存带宽",
+         lambda r: r.gpu_spec.memory_bandwidth_gbps if r.gpu_spec else None, "higher",
+         lambda v: f"{v:,} GB/s" if v is not None else "—"),
+        ("NVLink / card", "NVLink 带宽",
+         lambda r: r.gpu_spec.nvlink_bandwidth_gbps if r.gpu_spec else None, "higher",
+         lambda v: (f"{v} GB/s" if v else "无") if v is not None else "—"),
+        ("Native FP8/FP4", "原生低精度",
+         _native_precision_score, "higher",
+         _fmt_native),
+        # ── Sizing & performance outcomes (contested) ──
         ("Prod GPUs", "生产档 GPU 数",
          _prod_gpu_count, "lower",
          lambda v: str(v) if v is not None else "—"),
@@ -621,11 +694,18 @@ def _render_compare(reports: list[EvaluationReport], locale: str) -> str:
         ("Prefill latency", "Prefill 延迟",
          lambda r: r.prefill.latency_ms.value if r.prefill else None, "lower",
          lambda v: f"{v:.0f} ms" if v is not None else "—"),
+        ("Per-GPU decode", "单卡 decode 吞吐",
+         lambda r: r.decode.per_gpu_tokens_per_sec.value if r.decode else None, "higher",
+         lambda v: f"{v:.0f} tok/s" if v is not None else "—"),
         ("Cluster decode", "集群 decode 吞吐",
          lambda r: r.decode.cluster_tokens_per_sec.value if r.decode else None, "higher",
          lambda v: f"{v:.0f} tok/s" if v is not None else "—"),
+        ("Sustained QPS", "稳态 QPS",
+         _cluster_qps, "higher",
+         lambda v: f"{v:.2f} q/s" if v is not None else "—"),
+        # ── Diagnostic (info — string, not a number race) ──
         ("Bottleneck", "瓶颈",
-         lambda r: r.concurrency.bottleneck if r.concurrency else None, "none",
+         lambda r: r.concurrency.bottleneck if r.concurrency else None, "info",
          lambda v: f"<code>{_esc(str(v))}</code>" if v else "—"),
     ]
 
@@ -658,14 +738,18 @@ def _render_compare(reports: list[EvaluationReport], locale: str) -> str:
             cells.append(f"<td{cls}>{fmt(v)}</td>")
 
         label = label_zh if is_zh else label_en
+        # Tag info rows so the eye knows "this is a model fact, not a contest".
+        is_info = better == "info"
+        label_cls = "lc-cmp-row-label lc-cmp-row-info" if is_info else "lc-cmp-row-label"
+        tr_cls = " class='lc-cmp-tr-info'" if is_info else ""
         rows_html.append(
-            f"<tr><th class='lc-cmp-row-label'>{_esc(label)}</th>{''.join(cells)}</tr>"
+            f"<tr{tr_cls}><th class='{label_cls}'>{_esc(label)}</th>{''.join(cells)}</tr>"
         )
 
     # Aggregate winner — count column wins across "higher/lower" metrics
     win_counts = [0] * len(reports)
     for label_en, label_zh, getter, better, fmt in metrics:
-        if better == "none":
+        if better == "info":
             continue
         values = [getter(r) for r in reports]
         numeric_pairs = [(i, v) for i, v in enumerate(values) if isinstance(v, (int, float))]
@@ -689,7 +773,7 @@ def _render_compare(reports: list[EvaluationReport], locale: str) -> str:
                 f"<div class='lc-cmp-summary'>"
                 f"{'综合最优' if is_zh else 'Overall winner'}: "
                 f"<strong>{_esc(leaders[0])}</strong> "
-                f"({max_wins}/{sum(1 for m in metrics if m[3] != 'none')} "
+                f"({max_wins}/{sum(1 for m in metrics if m[3] != 'info')} "
                 f"{'指标领先' if is_zh else 'metrics lead'})"
                 f"</div>"
             )
@@ -1775,6 +1859,16 @@ button.label-wrap:hover { background: #f1f5f9 !important; }
   font-weight: 600 !important;
   white-space: nowrap;
 }
+.lc-cmp-row-info {
+  font-style: italic;
+  color: #9ca3af !important;
+}
+.dark .lc-cmp-row-info { color: #6b7280 !important; }
+.lc-cmp-tr-info td {
+  color: #6b7280;
+  background: #fafafa;
+}
+.dark .lc-cmp-tr-info td { color: #9ca3af; background: #0f172a; }
 .lc-cmp-gpu {
   font-family: "SF Mono", "JetBrains Mono", Menlo, monospace !important;
   font-size: 12px !important;
