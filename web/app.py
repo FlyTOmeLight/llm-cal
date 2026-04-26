@@ -1919,5 +1919,39 @@ def _build_ui() -> gr.Blocks:
     return demo
 
 
+def _prewarm_cache() -> None:
+    """Fill the artifact cache for every Examples row so first-click users
+    don't pay the 3-8s HF/MS metadata roundtrip.
+
+    Runs on a daemon thread alongside the Gradio server. Failures are
+    swallowed (printed only) — pre-warm is a UX nicety, never a hard
+    dependency. Set LLM_CAL_PREWARM=0 to disable (useful for local dev
+    when you don't want 9 API calls every time you `python web/app.py`).
+    """
+    import time
+
+    print(f"[prewarm] starting cache warm-up for {len(EXAMPLE_MODELS)} examples")
+    for i, (model_id, _vendor, gpu, engine, source) in enumerate(EXAMPLE_MODELS, 1):
+        src_key = "modelscope" if "modelscope" in source.lower() else "huggingface"
+        label = f"{i}/{len(EXAMPLE_MODELS)} {src_key}:{model_id}"
+        try:
+            t0 = time.monotonic()
+            _get_evaluator(src_key).evaluate(
+                model_id=model_id,
+                gpu=gpu,
+                engine=engine,
+            )
+            print(f"[prewarm] {label} ok ({time.monotonic() - t0:.1f}s)")
+        except Exception as e:  # noqa: BLE001
+            print(f"[prewarm] {label} skip — {type(e).__name__}: {e}")
+        # Throttle to stay well under HF/MS anonymous rate limits.
+        time.sleep(2)
+    print("[prewarm] done")
+
+
 if __name__ == "__main__":
+    if os.environ.get("LLM_CAL_PREWARM", "1") == "1":
+        import threading
+
+        threading.Thread(target=_prewarm_cache, daemon=True).start()
     _build_ui().launch(theme=THEME, css=CUSTOM_CSS)
