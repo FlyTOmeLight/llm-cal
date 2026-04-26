@@ -573,6 +573,185 @@ def _render(report: EvaluationReport, locale: str) -> str:
     )
 
 
+def _render_compare(reports: list[EvaluationReport], locale: str) -> str:
+    """Side-by-side comparison of N >= 2 reports for the same model on
+    different GPUs.
+
+    Each metric column declares whether higher or lower is better and we
+    paint the winner cell in green so the eye snaps to it.
+    """
+    set_locale(locale)  # type: ignore[arg-type]
+    is_zh = locale == "zh"
+
+    # All reports share the same model_id + engine — pull from the first.
+    head = reports[0]
+    title = (
+        f"<div class='lc-header'>"
+        f"<div class='lc-title'>{_esc(head.model_id)}</div>"
+        f"<div class='lc-subtitle'>"
+        f"{('对比 ' + str(len(reports)) + ' 张 GPU') if is_zh else ('Comparing ' + str(len(reports)) + ' GPUs')}"
+        f" · {_esc(head.engine)}"
+        f"</div></div>"
+    )
+
+    # Metric definitions: (label_en, label_zh, value_fn, better=lower|higher|none)
+    def _max_concurrent(r: EvaluationReport) -> int | None:
+        if not r.fleet:
+            return None
+        prod = next((o for o in r.fleet.options if o.tier == "prod"), None)
+        return prod.max_concurrent_at_reference_ctx if prod else None
+
+    def _prod_gpu_count(r: EvaluationReport) -> int | None:
+        if not r.fleet:
+            return None
+        prod = next((o for o in r.fleet.options if o.tier == "prod"), None)
+        return prod.gpu_count if prod else None
+
+    metrics = [
+        # (en, zh, getter, better, formatter)
+        ("Quantization", "量化方案",
+         lambda r: r.weight.quantization_guess.value, "none",
+         lambda v: _esc(str(v)) if v else "—"),
+        ("Prod GPUs", "生产档 GPU 数",
+         _prod_gpu_count, "lower",
+         lambda v: str(v) if v is not None else "—"),
+        ("Users @ 128K", "用户 @ 128K",
+         _max_concurrent, "higher",
+         lambda v: str(v) if v is not None else "—"),
+        ("Prefill latency", "Prefill 延迟",
+         lambda r: r.prefill.latency_ms.value if r.prefill else None, "lower",
+         lambda v: f"{v:.0f} ms" if v is not None else "—"),
+        ("Cluster decode", "集群 decode 吞吐",
+         lambda r: r.decode.cluster_tokens_per_sec.value if r.decode else None, "higher",
+         lambda v: f"{v:.0f} tok/s" if v is not None else "—"),
+        ("Bottleneck", "瓶颈",
+         lambda r: r.concurrency.bottleneck if r.concurrency else None, "none",
+         lambda v: f"<code>{_esc(str(v))}</code>" if v else "—"),
+    ]
+
+    # GPU column headers
+    gpu_headers = "".join(
+        f"<th class='lc-cmp-gpu'>{_esc(r.gpu)}</th>" for r in reports
+    )
+
+    rows_html = []
+    for label_en, label_zh, getter, better, fmt in metrics:
+        values = [getter(r) for r in reports]
+
+        # Pick the winning index. None values are excluded from the contest.
+        winner_idx: int | None = None
+        if better in ("higher", "lower"):
+            numeric_pairs = [(i, v) for i, v in enumerate(values) if isinstance(v, (int, float))]
+            if numeric_pairs:
+                if better == "higher":
+                    winner_idx = max(numeric_pairs, key=lambda p: p[1])[0]
+                else:
+                    winner_idx = min(numeric_pairs, key=lambda p: p[1])[0]
+                # If all values are equal, no winner (avoid arbitrary-tiebreak gold star)
+                vals_set = {v for _, v in numeric_pairs}
+                if len(vals_set) <= 1:
+                    winner_idx = None
+
+        cells = []
+        for i, v in enumerate(values):
+            cls = " class='lc-cmp-winner'" if i == winner_idx else ""
+            cells.append(f"<td{cls}>{fmt(v)}</td>")
+
+        label = label_zh if is_zh else label_en
+        rows_html.append(
+            f"<tr><th class='lc-cmp-row-label'>{_esc(label)}</th>{''.join(cells)}</tr>"
+        )
+
+    # Aggregate winner — count column wins across "higher/lower" metrics
+    win_counts = [0] * len(reports)
+    for label_en, label_zh, getter, better, fmt in metrics:
+        if better == "none":
+            continue
+        values = [getter(r) for r in reports]
+        numeric_pairs = [(i, v) for i, v in enumerate(values) if isinstance(v, (int, float))]
+        if not numeric_pairs:
+            continue
+        vals_set = {v for _, v in numeric_pairs}
+        if len(vals_set) <= 1:
+            continue
+        if better == "higher":
+            winner_idx = max(numeric_pairs, key=lambda p: p[1])[0]
+        else:
+            winner_idx = min(numeric_pairs, key=lambda p: p[1])[0]
+        win_counts[winner_idx] += 1
+
+    overall_text = ""
+    if any(win_counts):
+        max_wins = max(win_counts)
+        leaders = [reports[i].gpu for i, c in enumerate(win_counts) if c == max_wins]
+        if len(leaders) == 1:
+            overall_text = (
+                f"<div class='lc-cmp-summary'>"
+                f"{'综合最优' if is_zh else 'Overall winner'}: "
+                f"<strong>{_esc(leaders[0])}</strong> "
+                f"({max_wins}/{sum(1 for m in metrics if m[3] != 'none')} "
+                f"{'指标领先' if is_zh else 'metrics lead'})"
+                f"</div>"
+            )
+        else:
+            overall_text = (
+                f"<div class='lc-cmp-summary'>"
+                f"{'势均力敌' if is_zh else 'Tied'}: "
+                f"<strong>{_esc(' / '.join(leaders))}</strong>"
+                f"</div>"
+            )
+
+    table = (
+        f"<div class='lc-section'>"
+        f"<h3>{'对比' if is_zh else 'Side-by-side comparison'}</h3>"
+        f"<div class='lc-cmp-wrap'>"
+        f"<table class='lc-cmp-table'>"
+        f"<thead><tr>"
+        f"<th class='lc-cmp-row-label'></th>"
+        f"{gpu_headers}"
+        f"</tr></thead>"
+        f"<tbody>{''.join(rows_html)}</tbody>"
+        f"</table></div>"
+        f"{overall_text}"
+        f"</div>"
+    )
+
+    # Per-GPU detail headlines (small stat cards) below the table
+    detail_blocks = []
+    for r in reports:
+        weight_str = _fmt_bytes(r.weight.total_bytes.value)
+        prod = _prod_gpu_count(r)
+        users = _max_concurrent(r)
+        detail_blocks.append(
+            f"<div class='lc-cmp-detail'>"
+            f"<div class='lc-cmp-detail-gpu'>{_esc(r.gpu)}</div>"
+            f"<div class='lc-cmp-detail-row'>"
+            f"<span>{'权重' if is_zh else 'Weight'}</span><strong>{weight_str}</strong></div>"
+            f"<div class='lc-cmp-detail-row'>"
+            f"<span>{'生产 GPU' if is_zh else 'Prod GPUs'}</span>"
+            f"<strong>{prod if prod is not None else '—'}</strong></div>"
+            f"<div class='lc-cmp-detail-row'>"
+            f"<span>{'用户 @ 128K' if is_zh else 'Users @ 128K'}</span>"
+            f"<strong>{users if users is not None else '—'}</strong></div>"
+            f"</div>"
+        )
+    detail_section = (
+        f"<div class='lc-section'>"
+        f"<h3>{'各档详情' if is_zh else 'Per-GPU detail'}</h3>"
+        f"<div class='lc-cmp-details'>{''.join(detail_blocks)}</div>"
+        f"</div>"
+    )
+
+    return (
+        "<div class='lc-result'>"
+        + title
+        + table
+        + detail_section
+        + _render_star_cta(is_zh)
+        + "</div>"
+    )
+
+
 def _render_star_cta(is_zh: bool) -> str:
     """Tail-of-result CTA — shown right after the user got their answer,
     which is when satisfaction is highest and the GitHub star ask reads as
@@ -709,7 +888,7 @@ def _get_evaluator(source_key: str) -> Evaluator:
 
 def calculate(
     model_id: str,
-    gpu: str,
+    gpu,  # list[str] from multiselect; str also tolerated  # noqa: ANN001
     engine: str,
     context_length: int | None,
     lang: str,
@@ -734,6 +913,14 @@ def calculate(
     locale = "zh" if lang.startswith("中") else "en"
     is_zh = locale == "zh"
 
+    # Normalize GPU input. Multiselect returns list; defensive coerce for safety.
+    if isinstance(gpu, str):
+        gpu_list = [gpu] if gpu else []
+    elif isinstance(gpu, (list, tuple)):
+        gpu_list = [g for g in gpu if g]
+    else:
+        gpu_list = []
+
     if not model_id or not model_id.strip():
         return (
             _render_error(
@@ -743,8 +930,10 @@ def calculate(
             "",
             "",
         )
-    if not gpu:
+    if not gpu_list:
         return (_render_error("请选择 GPU" if is_zh else "Pick a GPU", is_zh), "", "")
+
+    is_compare = len(gpu_list) >= 2
 
     # Resolve source key. The radio shows e.g. "HuggingFace" / "ModelScope".
     src_key = "modelscope" if "modelscope" in source.lower() else "huggingface"
@@ -764,24 +953,36 @@ def calculate(
     if ms_token and ms_token.strip():
         os.environ["MODELSCOPE_API_TOKEN"] = ms_token.strip()
 
+    def _eval_one(g: str) -> EvaluationReport:
+        return _get_evaluator(src_key).evaluate(
+            model_id=model_id.strip(),
+            gpu=g,
+            engine=engine,
+            gpu_count=gpu_count if gpu_count and gpu_count > 0 else None,
+            context_length=context_length if context_length and context_length > 0 else None,
+            refresh=refresh,
+            input_tokens=int(input_tokens) if input_tokens else 2000,
+            output_tokens=int(output_tokens) if output_tokens else 512,
+            target_tokens_per_sec=float(target_tps) if target_tps else 30.0,
+            prefill_utilization=float(prefill_util) if prefill_util else 0.40,
+            decode_bw_utilization=float(decode_bw_util) if decode_bw_util else 0.50,
+            concurrency_degradation=(
+                float(concurrency_degradation) if concurrency_degradation else 1.0
+            ),
+        )
+
     try:
+        # ---- Compare path: 2-4 GPUs --------------------------------------
+        if is_compare:
+            try:
+                reports = [_eval_one(g) for g in gpu_list]
+            except Exception as e:  # noqa: BLE001
+                return (_render_error(f"{type(e).__name__}: {e}", is_zh), "", "")
+            return _render_compare(reports, locale), "", ""
+
+        # ---- Single-GPU path (existing flow) ------------------------------
         try:
-            report = _get_evaluator(src_key).evaluate(
-                model_id=model_id.strip(),
-                gpu=gpu,
-                engine=engine,
-                gpu_count=gpu_count if gpu_count and gpu_count > 0 else None,
-                context_length=context_length if context_length and context_length > 0 else None,
-                refresh=refresh,
-                input_tokens=int(input_tokens) if input_tokens else 2000,
-                output_tokens=int(output_tokens) if output_tokens else 512,
-                target_tokens_per_sec=float(target_tps) if target_tps else 30.0,
-                prefill_utilization=float(prefill_util) if prefill_util else 0.40,
-                decode_bw_utilization=float(decode_bw_util) if decode_bw_util else 0.50,
-                concurrency_degradation=(
-                    float(concurrency_degradation) if concurrency_degradation else 1.0
-                ),
-            )
+            report = _eval_one(gpu_list[0])
         except Exception as e:  # noqa: BLE001
             return (_render_error(f"{type(e).__name__}: {e}", is_zh), "", "")
 
@@ -1537,6 +1738,116 @@ button.label-wrap:hover { background: #f1f5f9 !important; }
   border-radius: 0 !important;
 }
 
+/* Comparison view — side-by-side metrics across GPUs */
+.lc-cmp-wrap {
+  overflow-x: auto;
+  margin: 8px 0 12px 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #ffffff;
+}
+.dark .lc-cmp-wrap { background: #111827; border-color: #374151; }
+.lc-cmp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px !important;
+}
+.lc-cmp-table th,
+.lc-cmp-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid #f3f4f6;
+}
+.dark .lc-cmp-table th,
+.dark .lc-cmp-table td { border-bottom-color: #1f2937; }
+.lc-cmp-table thead th {
+  font-size: 11px !important;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280 !important;
+  font-weight: 600 !important;
+  background: #f9fafb;
+}
+.dark .lc-cmp-table thead th { background: #1e293b; color: #9ca3af !important; }
+.lc-cmp-row-label {
+  font-size: 12px !important;
+  color: #6b7280 !important;
+  font-weight: 600 !important;
+  white-space: nowrap;
+}
+.lc-cmp-gpu {
+  font-family: "SF Mono", "JetBrains Mono", Menlo, monospace !important;
+  font-size: 12px !important;
+}
+.lc-cmp-table tbody tr:last-child td { border-bottom: none; }
+.lc-cmp-winner {
+  background: rgba(22, 163, 74, 0.10) !important;
+  font-weight: 700 !important;
+  color: #15803d !important;
+  position: relative;
+}
+.dark .lc-cmp-winner { background: rgba(74, 222, 128, 0.15) !important; color: #4ade80 !important; }
+.lc-cmp-winner::before {
+  content: "✓ ";
+  font-size: 11px;
+  font-weight: 700;
+  color: #15803d;
+  margin-right: 2px;
+}
+.dark .lc-cmp-winner::before { color: #4ade80; }
+.lc-cmp-summary {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  font-size: 13px !important;
+  color: #312e81 !important;
+}
+.dark .lc-cmp-summary {
+  background: #1e1b4b;
+  border-color: #3730a3;
+  color: #e0e7ff !important;
+}
+.lc-cmp-summary strong { color: #4338ca; }
+.dark .lc-cmp-summary strong { color: #a5b4fc; }
+
+/* Per-GPU detail cards under the table */
+.lc-cmp-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+.lc-cmp-detail {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: #ffffff;
+}
+.dark .lc-cmp-detail { background: #111827; border-color: #374151; }
+.lc-cmp-detail-gpu {
+  font-family: "SF Mono", "JetBrains Mono", Menlo, monospace !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  color: #0f172a !important;
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #e5e7eb;
+}
+.dark .lc-cmp-detail-gpu { color: #f8fafc !important; border-bottom-color: #374151; }
+.lc-cmp-detail-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px !important;
+  padding: 3px 0;
+}
+.lc-cmp-detail-row span { color: #6b7280 !important; }
+.lc-cmp-detail-row strong {
+  color: #0f172a !important;
+  font-size: 13px !important;
+}
+.dark .lc-cmp-detail-row strong { color: #f8fafc !important; }
+
 /* Star-on-GitHub CTA — shown at the bottom of the result, capturing the
    peak-satisfaction moment. Card-style with indigo accent so it reads as
    "thanks", not as a banner ad. */
@@ -1738,10 +2049,12 @@ def _build_ui() -> gr.Blocks:
             )
             gpu = gr.Dropdown(
                 choices=_VENDOR_TO_GPUS[DEFAULT_VENDOR],
-                value=DEFAULT_GPU,
+                value=[DEFAULT_GPU],
                 label="GPU model · GPU 型号",
-                info="Target hardware · 目标硬件型号",
+                info="One GPU = single eval. 2-4 = compare side-by-side · 选 1 张单评估，2-4 张对比",
                 scale=2,
+                multiselect=True,
+                max_choices=4,
                 allow_custom_value=True,
             )
 
@@ -1873,7 +2186,8 @@ def _build_ui() -> gr.Blocks:
 
         gr.Examples(
             examples=[
-                [m, v, g, e, None, "English", s]
+                # gpu wrapped in a list — the Dropdown is multiselect now
+                [m, v, [g], e, None, "English", s]
                 for m, v, g, e, s in EXAMPLE_MODELS
             ],
             inputs=[model_id, vendor, gpu, engine, context_length, lang, source],
@@ -1889,13 +2203,24 @@ def _build_ui() -> gr.Blocks:
             "</div>"
         )
 
-        # When vendor changes, repopulate the GPU dropdown.
-        def _on_vendor_change(v: str):  # noqa: ANN202
+        # When vendor changes, repopulate the GPU dropdown but PRESERVE any
+        # cross-vendor selections (the whole point of compare mode is to
+        # stack e.g. H800 + MI300X + 910B4 across NVIDIA/AMD/Ascend).
+        def _on_vendor_change(v: str, current):  # noqa: ANN001, ANN202
             gpus = _VENDOR_TO_GPUS.get(v, [])
-            default = gpus[0] if gpus else None
-            return gr.Dropdown(choices=gpus, value=default)
+            # multiselect returns list; harden against str/None for safety
+            if isinstance(current, list):
+                keep = list(current)
+            elif current:
+                keep = [current]
+            else:
+                keep = []
+            # Empty selection? Seed with the first GPU so the form stays usable.
+            if not keep:
+                keep = [gpus[0]] if gpus else []
+            return gr.Dropdown(choices=gpus, value=keep)
 
-        vendor.change(fn=_on_vendor_change, inputs=[vendor], outputs=[gpu])
+        vendor.change(fn=_on_vendor_change, inputs=[vendor, gpu], outputs=[gpu])
 
         # Click flow: instantly show "loading…", THEN run calculate.
         all_outputs = [output_main, output_explain, output_llm]
