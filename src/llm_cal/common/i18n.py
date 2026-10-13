@@ -12,11 +12,12 @@ Usage:
 from __future__ import annotations
 
 import os
+from contextvars import ContextVar
 from typing import Literal
 
 Locale = Literal["en", "zh"]
 
-_current_locale: Locale = "en"
+_current_locale: ContextVar[Locale] = ContextVar("llm_cal_locale", default="en")
 
 
 _MESSAGES: dict[str, dict[Locale, str]] = {
@@ -228,8 +229,8 @@ _MESSAGES: dict[str, dict[Locale, str]] = {
         "zh": "已强制指定 GPU 张数（--gpu-count）",
     },
     "fleet.gpu_spec_unknown": {
-        "en": "Fleet planning skipped — GPU spec unknown.",
-        "zh": "GPU 规格未知，跳过 fleet 规划。",
+        "en": "Fleet planning skipped — GPU, architecture or checkpoint metadata is incomplete.",
+        "zh": "GPU、架构或权重信息不完整，跳过 fleet 规划。",
     },
     # Command generator
     "section.command": {
@@ -268,12 +269,12 @@ _MESSAGES: dict[str, dict[Locale, str]] = {
         "zh": "Prefill 延迟（单请求）",
     },
     "perf.decode_throughput_cluster": {
-        "en": "Decode throughput (cluster)",
-        "zh": "Decode 吞吐（集群）",
+        "en": "Decode throughput (TP group, single request)",
+        "zh": "Decode 吞吐（TP 组，单请求）",
     },
     "perf.decode_throughput_per_gpu": {
-        "en": "Decode throughput (per GPU)",
-        "zh": "Decode 吞吐（单卡）",
+        "en": "TP rank throughput (before communication)",
+        "zh": "TP rank 吞吐（通信前）",
     },
     "perf.decode_moe_active_optimistic": {
         "en": "Decode throughput (MoE active-only, optimistic)",
@@ -390,12 +391,11 @@ _MESSAGES: dict[str, dict[Locale, str]] = {
 
 
 def set_locale(loc: Locale) -> None:
-    global _current_locale
-    _current_locale = loc
+    _current_locale.set(loc)
 
 
 def get_locale() -> Locale:
-    return _current_locale
+    return _current_locale.get()
 
 
 def detect_locale_from_env() -> Locale:
@@ -412,7 +412,7 @@ def t(key: str, **kwargs: object) -> str:
     bundle = _MESSAGES.get(key)
     if bundle is None:
         return key
-    template = bundle.get(_current_locale, bundle.get("en", key))
+    template = bundle.get(_current_locale.get(), bundle.get("en", key))
     if kwargs:
         try:
             return template.format(**kwargs)

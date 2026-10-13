@@ -57,26 +57,30 @@ class ModelScopeSource(ModelSource):
         endpoint: str | None = None,
         timeout_s: float = 30.0,
         revision: str = DEFAULT_REVISION,
+        token: str | None = None,
     ) -> None:
-        self._endpoint = (endpoint or DEFAULT_ENDPOINT).rstrip("/")
+        self.endpoint = (endpoint or DEFAULT_ENDPOINT).rstrip("/")
+        self.token = get_modelscope_token() if token is None else token
         self._timeout_s = timeout_s
-        self._revision = revision
+        self.revision = revision
 
-    def fetch(self, model_id: str) -> ModelArtifact:
-        token = get_modelscope_token()
-        headers = self._auth_headers(token)
+    def resolve_revision(self, model_id: str) -> str | None:
+        return self._fetch_commit_sha(model_id, self._auth_headers(self.token))
+
+    def fetch(self, model_id: str, revision: str | None = None) -> ModelArtifact:
+        headers = self._auth_headers(self.token)
 
         # Step 1: model info — gives us LatestSha (commit pin) when available.
         # We tolerate missing info; fall back to revision="master" so that the
         # file list + config calls still work.
-        commit_sha = self._fetch_commit_sha(model_id, headers)
+        commit_sha = revision or self._fetch_commit_sha(model_id, headers)
 
         # Step 2: file tree with sizes. ONE call, recursive, includes sub-folders.
-        siblings = self._list_files(model_id, commit_sha or self._revision, headers)
+        siblings = self._list_files(model_id, commit_sha or self.revision, headers)
 
         # Step 3: config.json. Pin to the commit sha when we have it so two
         # back-to-back calls don't race against a repo update.
-        config = self._fetch_config(model_id, commit_sha or self._revision, headers)
+        config = self._fetch_config(model_id, commit_sha or self.revision, headers)
 
         return ModelArtifact(
             source=self.name,
@@ -92,11 +96,9 @@ class ModelScopeSource(ModelSource):
         return {"Authorization": f"Bearer {token}"} if token else {}
 
     def _fetch_commit_sha(self, model_id: str, headers: dict[str, str]) -> str | None:
-        url = f"{self._endpoint}{_INFO_PATH.format(model_id=model_id)}"
+        url = f"{self.endpoint}{_INFO_PATH.format(model_id=model_id)}"
         try:
-            resp = httpx.get(
-                url, headers=headers, timeout=self._timeout_s, follow_redirects=True
-            )
+            resp = httpx.get(url, headers=headers, timeout=self._timeout_s, follow_redirects=True)
         except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPError):
             # Soft fail — commit sha is best-effort. Caller will use "master".
             return None
@@ -122,7 +124,7 @@ class ModelScopeSource(ModelSource):
     def _list_files(
         self, model_id: str, revision: str, headers: dict[str, str]
     ) -> tuple[SiblingFile, ...]:
-        url = f"{self._endpoint}{_FILES_PATH.format(model_id=model_id)}"
+        url = f"{self.endpoint}{_FILES_PATH.format(model_id=model_id)}"
         params = {"Recursive": "true", "Revision": revision}
         try:
             resp = httpx.get(
@@ -140,9 +142,7 @@ class ModelScopeSource(ModelSource):
         try:
             payload = resp.json()
         except json.JSONDecodeError as e:
-            raise SourceUnavailableError(
-                f"ModelScope file list returned non-JSON: {e}"
-            ) from e
+            raise SourceUnavailableError(f"ModelScope file list returned non-JSON: {e}") from e
 
         files = _extract_files(payload)
         if files is None:
@@ -153,7 +153,8 @@ class ModelScopeSource(ModelSource):
         return tuple(
             SiblingFile(filename=f["Path"], size=f.get("Size"))
             for f in files
-            if isinstance(f, dict) and isinstance(f.get("Path"), str)
+            if isinstance(f, dict)
+            and isinstance(f.get("Path"), str)
             # Only include blobs (not directories). Type=tree means folder.
             and f.get("Type", "blob") != "tree"
         )
@@ -161,7 +162,7 @@ class ModelScopeSource(ModelSource):
     def _fetch_config(
         self, model_id: str, revision: str, headers: dict[str, str]
     ) -> dict[str, Any]:
-        url = f"{self._endpoint}{_RAW_PATH.format(model_id=model_id)}"
+        url = f"{self.endpoint}{_RAW_PATH.format(model_id=model_id)}"
         params = {"FilePath": "config.json", "Revision": revision}
         try:
             resp = httpx.get(
@@ -183,20 +184,14 @@ class ModelScopeSource(ModelSource):
                 f"config.json is not valid JSON (line {e.lineno} col {e.colno}): {e.msg}"
             ) from e
         if not isinstance(parsed, dict):
-            raise SourceUnavailableError(
-                "config.json did not parse to a JSON object."
-            )
+            raise SourceUnavailableError("config.json did not parse to a JSON object.")
         return parsed
 
-    def _raise_for_status(
-        self, resp: httpx.Response, model_id: str, what: str
-    ) -> None:
+    def _raise_for_status(self, resp: httpx.Response, model_id: str, what: str) -> None:
         if resp.status_code == 200:
             return
         if resp.status_code == 404:
-            raise ModelNotFoundError(
-                f"Model '{model_id}' not found on ModelScope ({what})."
-            )
+            raise ModelNotFoundError(f"Model '{model_id}' not found on ModelScope ({what}).")
         if resp.status_code in (401, 403):
             raise AuthRequiredError(modelscope_auth_error_message(model_id))
         if resp.status_code == 429:
@@ -205,9 +200,7 @@ class ModelScopeSource(ModelSource):
                 f"ModelScope rate limit (429). Retry-After: {retry}s. "
                 "Setting MODELSCOPE_API_TOKEN increases your quota."
             )
-        raise SourceUnavailableError(
-            f"ModelScope {what} returned HTTP {resp.status_code}"
-        )
+        raise SourceUnavailableError(f"ModelScope {what} returned HTTP {resp.status_code}")
 
 
 def _extract_files(payload: Any) -> list[Any] | None:

@@ -42,7 +42,7 @@ class ReconciliationReport:
         """One-liner for output formatter."""
         if not self.candidates:
             return f"{self.observed_bytes:,} bytes — no quantization candidates tested"
-        c = self.candidates[0]
+        c = next((c for c in self.candidates if c.scheme == self.best.value), self.candidates[0])
         return (
             f"Observed {self.observed_bytes:,} bytes. "
             f"Best match: {c.scheme} "
@@ -219,7 +219,7 @@ def _reconcile_with_fingerprint(
             candidates=candidates,
             best=AnnotatedValue(
                 declared,
-                Label.VERIFIED,
+                fingerprint.label,
                 source=(
                     f"{fingerprint.evidence} "
                     f"(predicts {match.predicted_bytes:,} bytes, "
@@ -236,12 +236,12 @@ def _reconcile_with_fingerprint(
         candidates=candidates,
         best=AnnotatedValue(
             declared,
-            Label.VERIFIED,
+            Label.UNKNOWN,
             source=(
                 f"{fingerprint.evidence} "
                 f"(NOTE: bytes predict {match.predicted_bytes:,}, off by "
-                f"{match.relative_error * 100:.1f}% — likely our param estimate is off, "
-                f"not the declaration)"
+                f"{match.relative_error * 100:.1f}% — either the parameter estimate or declaration is incomplete; "
+                f"quantization is unresolved)"
             ),
         ),
     )

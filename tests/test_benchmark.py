@@ -192,13 +192,13 @@ class TestExitCode:
         ]
         assert exit_code_from(results) == 1
 
-    def test_exit_0_when_only_skips(self):
+    def test_exit_1_when_only_skips(self):
         from llm_cal.benchmark.runner import CheckResult
 
         results = [
             CheckResult("a", "f1", "SKIP", "", "", "src"),
         ]
-        assert exit_code_from(results) == 0
+        assert exit_code_from(results) == 1
 
 
 def test_benchmark_flag_in_cli_help():

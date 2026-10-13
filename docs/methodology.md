@@ -80,14 +80,14 @@ latency_ms = (FLOPs / (effective_TFLOPS × 1e12)) × 1000
 - **Paper link**: https://arxiv.org/abs/2001.08361
 
 **Caveat**: This formula ignores the `O(seq_len²)` term of self-attention.
-For very long sequences (>32K) this underestimates slightly. For typical
-LLM inference prefill it's within ~5% of the true FLOPs.
+It uses total resident parameters even for MoE. Error depends on architecture and workload; hardware calibration is pending.
 
 ### Decode tokens/second
 **Formula**:
 ```
 per_gpu_tokens_per_sec = memory_bandwidth × bw_util / weight_bytes_per_gpu
-cluster_tokens_per_sec = per_gpu × num_gpus × cluster_comm_efficiency
+weight_bytes_per_gpu = total_weight_bytes / num_gpus
+cluster_tokens_per_sec = per_gpu_tokens_per_sec × effective_comm_efficiency
 ```
 
 **Source**: Decode is memory-bandwidth-bound because autoregressive
@@ -107,6 +107,8 @@ experts to be touched across a batch, so the "all weights" assumption is
 often closer to reality. The tool reports BOTH:
 - Conservative (all weights) — default in summary
 - Active-only (optimistic) — shown separately, tagged `optimistic`
+
+Decode here is the estimated single-request rate of one TP group. Dividing weights by GPU count already accounts for TP scaling. L is a screening estimate without batch weight reuse, not a measured aggregate-throughput or SLA guarantee. See the [calibration protocol](calibration.md).
 
 ### Utilization factors — all empirical, all overridable
 
@@ -140,7 +142,7 @@ K = floor(per_GPU_headroom_bytes / per_GPU_KV_bytes_per_request)
 Same logic as the fleet planner. Deterministic given K inputs.
 
 **Label**: `[estimated]` — the "headroom" calculation assumes `--gpu-memory-utilization 0.9`
-matches what vLLM actually achieves. Usually within 2-3% of reality.
+matches the engine allocation. This assumption requires measurement on the target stack.
 
 ### L bound (compute/bandwidth at SLA)
 ```
@@ -202,7 +204,7 @@ If you care about a specific deployment:
    concurrency level.
 4. Fit `degradation_factor = theoretical_ceiling / measured_ceiling` and
    pass via `--concurrency-degradation`.
-5. The tool's output will now match YOUR stack within a few percent.
+5. Validate the fitted coefficients on a separate workload; report the observed errors.
 
 ---
 

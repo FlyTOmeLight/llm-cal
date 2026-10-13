@@ -15,7 +15,13 @@ permissions:
   contents: read
 
 jobs:
+  validate:
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ inputs.ref || github.ref }}
+
   build:
+    needs: validate
     name: Build sdist + wheel
     runs-on: ubuntu-latest
     steps:

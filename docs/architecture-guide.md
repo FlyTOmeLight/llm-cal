@@ -267,7 +267,8 @@ context:
 |---|---|
 | HF API `model_info().siblings[].size` | `[verified]` |
 | `config.json` field read directly | `[verified]` |
-| `sum(safetensors file sizes)` | `[verified]` (it IS a direct read, even though it's a sum) |
+| Complete, unambiguous `sum(safetensors file sizes)` | `[verified]`; missing sizes or ambiguous checkpoints are `[unknown]` |
+| Whole-model scheme from one sampled header | `[inferred]` |
 | `observed_bytes / total_params` = bits/param | `[inferred]` |
 | Nearest-anchor quantization match | `[inferred]` |
 | KV cache computed from profile | `[estimated]` |

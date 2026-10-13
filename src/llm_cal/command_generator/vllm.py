@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from shlex import quote
+
 from llm_cal.architecture.profile import ArchitectureProfile
 from llm_cal.engine_compat.loader import EngineCompatEntry
 
@@ -18,7 +20,7 @@ def generate_vllm_command(
     If `entry` is given, appends required_flags and optional_flags verbatim.
     """
     lines: list[str] = [
-        "vllm serve " + model_id,
+        "vllm serve " + quote(model_id),
         f"  --tensor-parallel-size {tensor_parallel_size}",
     ]
 
@@ -47,7 +49,7 @@ def generate_vllm_command(
 def _render_flag(flag: str, value: str | None) -> str:
     if value is None:
         return flag
-    return f"{flag} {value}"
+    return f"{flag} {quote(value)}"
 
 
 def _needs_trust_remote_code(model_type: str) -> bool:

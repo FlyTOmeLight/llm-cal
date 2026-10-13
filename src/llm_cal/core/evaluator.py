@@ -1,13 +1,10 @@
-"""Evaluator — the single orchestration layer.
-
-v0.1 partial implementation: composes model_source + detector + weight_analyzer
-+ reconciler + kv_cache + engine_compat + hardware. Fleet planner and command
-generator land in Week 5 remainder.
-"""
+"""Shared orchestration for model metadata, sizing, performance and commands."""
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
+from hashlib import sha256
 
 from llm_cal.architecture.detector import detect
 from llm_cal.architecture.formulas.kv_cache import compute_kv_cache_bytes
@@ -21,7 +18,7 @@ from llm_cal.fleet.planner import FleetRecommendation, plan
 from llm_cal.hardware.loader import GPUSpec, UnknownGPUError, lookup
 from llm_cal.model_source.base import ModelArtifact, ModelSource
 from llm_cal.model_source.huggingface import HuggingFaceSource
-from llm_cal.output.labels import AnnotatedValue
+from llm_cal.output.labels import AnnotatedValue, Label
 from llm_cal.performance.compute import (
     DEFAULT_DECODE_BW_UTILIZATION,
     DEFAULT_PREFILL_UTILIZATION,
@@ -79,7 +76,7 @@ class Evaluator:
     """Orchestrates: model_source -> detect -> analyze -> reconcile -> KV cache
     -> engine compat -> hardware lookup.
 
-    Fleet planning and command generation are remaining Week 5 additions.
+    The report is shared by CLI, Web and generated documentation.
     """
 
     def __init__(
@@ -105,6 +102,35 @@ class Evaluator:
         decode_bw_utilization: float = DEFAULT_DECODE_BW_UTILIZATION,
         concurrency_degradation: float = 1.0,
     ) -> EvaluationReport:
+        engine = engine.strip().lower()
+        if engine not in ("vllm", "sglang"):
+            raise ValueError("engine must be vllm or sglang")
+        for name, value in (
+            ("gpu_count", gpu_count),
+            ("context_length", context_length),
+            ("input_tokens", input_tokens),
+            ("output_tokens", output_tokens),
+        ):
+            if value is not None and (
+                isinstance(value, bool) or not isinstance(value, int) or value <= 0
+            ):
+                raise ValueError(f"{name} must be a positive integer")
+        for name, factor in (
+            ("prefill_utilization", prefill_utilization),
+            ("decode_bw_utilization", decode_bw_utilization),
+        ):
+            if not math.isfinite(factor) or not 0 < factor <= 1:
+                raise ValueError(f"{name} must be in (0, 1]")
+        for name, positive_value in (
+            ("target_tokens_per_sec", target_tokens_per_sec),
+            ("concurrency_degradation", concurrency_degradation),
+        ):
+            if positive_value is not None and (
+                not math.isfinite(positive_value) or positive_value <= 0
+            ):
+                raise ValueError(f"{name} must be finite and positive")
+        if not model_id.strip():
+            raise ValueError("model_id must not be empty")
         artifact = self._fetch(model_id, refresh=refresh)
         profile = detect(artifact.config)
 
@@ -118,6 +144,7 @@ class Evaluator:
             artifact,
             observed_bytes=observed_bytes_for_fp,
             total_params=total_params if total_params > 0 else 0,
+            refresh=refresh,
         )
         weight = analyze(
             artifact.siblings,
@@ -125,7 +152,7 @@ class Evaluator:
             fingerprint=fingerprint,
         )
         reconciliation = reconcile(
-            weight.total_bytes.value,
+            weight.total_bytes.value if weight.total_bytes.label == Label.VERIFIED else 0,
             total_params or 1,
             fingerprint=fingerprint,
         )
@@ -154,8 +181,15 @@ class Evaluator:
         # user chose a non-overlapping context_length override).
         fleet: FleetRecommendation | None = None
         generated_command: str | None = None
-        if gpu_spec is not None and weight.total_bytes.value > 0:
-            kv_ref = compute_kv_cache_bytes(profile, _KV_REFERENCE_CTX, dtype_bytes=2)
+        if (
+            gpu_spec is not None
+            and weight.total_bytes.value > 0
+            and weight.total_bytes.label == Label.VERIFIED
+            and all(v.label != Label.UNKNOWN for v in kv_by_ctx.values())
+        ):
+            kv_ref = compute_kv_cache_bytes(
+                profile, min(_KV_REFERENCE_CTX, max(contexts_to_report)), dtype_bytes=2
+            )
             kv_by_context_bytes = {ctx: av.value for ctx, av in kv_by_ctx.items() if av.value > 0}
             fleet = plan(
                 profile=profile,
@@ -164,6 +198,7 @@ class Evaluator:
                 gpu=gpu_spec,
                 forced_gpu_count=gpu_count,
                 kv_bytes_by_context=kv_by_context_bytes,
+                reference_context_length=min(_KV_REFERENCE_CTX, max(contexts_to_report)),
             )
             # Pick the gpu_count to emit the command for: user's forced value,
             # else the best_tier's recommendation.
@@ -171,20 +206,49 @@ class Evaluator:
                 (o.gpu_count for o in fleet.options if o.tier == fleet.best_tier),
                 fleet.options[0].gpu_count,
             )
-            generated_command = _generate_command(
-                engine=engine,
-                model_id=model_id,
-                profile=profile,
-                tp=chosen_count,
-                entry=engine_match,
-                max_model_len=context_length,
+            chosen_option = next(
+                o
+                for o in fleet.options
+                if o.gpu_count == chosen_count and o.tier == fleet.best_tier
             )
+            command_context = (
+                context_length
+                or (profile.position.max_position_embeddings if profile.position else None)
+                or max(contexts_to_report)
+            )
+            command_kv = compute_kv_cache_bytes(profile, command_context).value
+            from llm_cal.fleet.planner import _kv_shards
+
+            one_request_fits = (
+                chosen_option.weight_bytes_per_gpu
+                + math.ceil(command_kv / _kv_shards(profile, chosen_count))
+                <= chosen_option.usable_bytes_per_gpu
+            )
+            if (
+                chosen_option.fits
+                and one_request_fits
+                and engine_match is not None
+                and engine_match.support in ("full", "partial")
+            ):
+                generated_command = _generate_command(
+                    engine=engine,
+                    model_id=model_id,
+                    profile=profile,
+                    tp=chosen_count,
+                    entry=engine_match,
+                    max_model_len=command_context,
+                )
 
         # Performance analysis — runs whenever we have hardware + fleet.
         prefill_est: PrefillEstimate | None = None
         decode_est: DecodeEstimate | None = None
         concurrency_est: ConcurrencyAnalysis | None = None
-        if gpu_spec is not None and fleet is not None and total_params > 0:
+        if (
+            gpu_spec is not None
+            and fleet is not None
+            and total_params > 0
+            and any(o.fits and o.tier == fleet.best_tier for o in fleet.options)
+        ):
             # Pick the fleet tier we're analyzing (user's forced count or best tier).
             chosen = gpu_count or next(
                 (o.gpu_count for o in fleet.options if o.tier == fleet.best_tier),
@@ -235,7 +299,7 @@ class Evaluator:
             from llm_cal.fleet.planner import _kv_shards
 
             shards = _kv_shards(profile, chosen)
-            kv_ref_per_gpu = max(1, kv_ref_bytes // shards)
+            kv_ref_per_gpu = max(1, math.ceil(kv_ref_bytes / shards))
             # Request KV lives per-GPU; under replication, it's the same value on all.
             # We compare cluster headroom against per-GPU KV (each request consumes
             # per-GPU KV on every rank simultaneously).
@@ -274,24 +338,30 @@ class Evaluator:
             perf_target_tokens_per_sec=target_tokens_per_sec or 30.0 if fleet else None,
         )
 
+    def _cache_key(self, model_id: str, revision: str | None) -> CacheKey:
+        credential_scope = sha256((self._source.token or "").encode()).hexdigest()
+        namespace = f"{self._source.name}@{self._source.endpoint or ''}@{credential_scope}"
+        return CacheKey(namespace, model_id, revision)
+
     def _fetch(self, model_id: str, refresh: bool) -> ModelArtifact:
-        artifact = self._source.fetch(model_id)
-        key = CacheKey(
-            source=self._source.name,
-            model_id=model_id,
-            commit_sha=artifact.commit_sha,
-        )
+        revision = self._source.resolve_revision(model_id)
+        key = self._cache_key(model_id, revision)
         cached = self._cache.get(key, bypass=refresh)
         if cached is not None:
             return cached
-        self._cache.set(key, artifact)
+        artifact = self._source.fetch(model_id, revision=revision)
+        self._cache.set(self._cache_key(model_id, artifact.commit_sha), artifact)
         return artifact
+
+    def close(self) -> None:
+        self._cache.close()
 
     def _resolve_quant_fingerprint(
         self,
         artifact: ModelArtifact,
         observed_bytes: int,
         total_params: int,
+        refresh: bool = False,
     ) -> QuantFingerprint | None:
         """Resolve the quantization scheme via authoritative evidence.
 
@@ -316,14 +386,21 @@ class Evaluator:
         if shard is None:
             return fp  # safetensors unavailable — best we can do is the config hint
 
-        dtypes = fetch_tensor_dtypes(
-            source=artifact.source,
-            model_id=artifact.model_id,
-            revision=artifact.commit_sha or "main",
-            shard_filename=shard.filename,
-        )
+        key = self._cache_key(artifact.model_id, artifact.commit_sha)
+        dtypes = None if refresh else self._cache.get_tensor_dtypes(key, shard.filename)
+        if dtypes is None:
+            dtypes = fetch_tensor_dtypes(
+                source=artifact.source,
+                model_id=artifact.model_id,
+                revision=artifact.commit_sha or self._source.revision,
+                shard_filename=shard.filename,
+                endpoint=self._source.endpoint,
+                token=self._source.token or "",
+            )
+            if dtypes:
+                self._cache.set_tensor_dtypes(key, shard.filename, dtypes)
         if not dtypes:
-            return fp
+            return None  # contradictory config is not evidence for the actual checkpoint
 
         st_fp = from_safetensors_dtypes(dtypes)
         # Header is ground truth — prefer it over config when both exist.
@@ -358,7 +435,7 @@ class Evaluator:
             candidates.append(max_pos)
         if max_pos:
             candidates = [c for c in candidates if c <= max_pos]
-        return candidates
+        return candidates or ([max_pos] if max_pos else [4096])
 
 
 def _generate_command(

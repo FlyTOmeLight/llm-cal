@@ -73,13 +73,27 @@ def analyze(
     heuristic for quantization_guess (VERIFIED instead of INFERRED).
     """
     observed_bytes = _safetensors_total_bytes(siblings)
+    files = [s for s in siblings if s.filename.endswith(".safetensors")]
+    complete = bool(files) and all(s.size is not None and s.size > 0 for s in files)
+    # Only root weights form an unambiguous model checkpoint. Nested variants
+    # or adapters need an explicit selection contract before sizing a fleet.
+    complete = complete and all(
+        "/" not in s.filename and not s.filename.startswith("adapter_") for s in files
+    )
+    complete = complete and not (
+        len(files) > 1 and any(s.filename == "model.safetensors" for s in files)
+    )
     total_bytes = AnnotatedValue(
         observed_bytes,
-        Label.VERIFIED,
-        source="sum of safetensors siblings from model_info API",
+        Label.VERIFIED if complete else Label.UNKNOWN,
+        source=(
+            "sum of safetensors siblings from model_info API"
+            if complete
+            else "incomplete sizes or ambiguous nested safetensors; known bytes only"
+        ),
     )
 
-    if not total_params or observed_bytes == 0:
+    if not complete or not total_params or observed_bytes == 0:
         return WeightReport(
             total_bytes=total_bytes,
             bits_per_param=None,
@@ -100,7 +114,7 @@ def analyze(
     if fingerprint is not None:
         quant: AnnotatedValue[QuantizationScheme] = AnnotatedValue(
             fingerprint.scheme,
-            Label.VERIFIED,
+            fingerprint.label,
             source=fingerprint.evidence,
         )
     else:

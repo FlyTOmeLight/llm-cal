@@ -61,13 +61,14 @@ latency_ms = (FLOPs / (effective_TFLOPS × 1e12)) × 1000
 - **"2 × params × tokens"**：Kaplan et al. 2020 "Scaling Laws for Neural Language Models"——这是每参数每 token 的前向计算成本，被 Chinchilla paper、Scaling Laws 系列论文和此后每一篇 transformer 推理分析反复使用。
 - **论文链接**：https://arxiv.org/abs/2001.08361
 
-**注意**：这个公式忽略了 self-attention 的 `O(seq_len²)` 项。超长序列（>32K）会略低估。典型 LLM 推理 prefill 场景误差 ~5%。
+**注意**：这个公式忽略了 self-attention 的 `O(seq_len²)` 项。MoE 也按全部驻留参数计算。误差取决于架构和负载，真实硬件校准尚未完成。
 
 ### Decode 每秒 tokens
 **公式**：
 ```
 per_gpu_tokens_per_sec = memory_bandwidth × bw_util / weight_bytes_per_gpu
-cluster_tokens_per_sec = per_gpu × num_gpus × cluster_comm_efficiency
+weight_bytes_per_gpu = total_weight_bytes / num_gpus
+cluster_tokens_per_sec = per_gpu_tokens_per_sec × effective_comm_efficiency
 ```
 
 **来源**：Decode 是内存带宽受限的，因为自回归生成每生成一个 token 都要把整个模型权重读一遍。
@@ -79,6 +80,8 @@ cluster_tokens_per_sec = per_gpu × num_gpus × cluster_comm_efficiency
 **注意（MoE 模型）**：严格说 MoE decode 只读 `num_experts_per_tok` 个激活专家，不是全部。但实际 vLLM 批处理下一批 tokens 会触及大部分专家，所以"全量"假设往往更接近真实。工具**同时**输出：
 - 保守（全量权重）——默认主显示
 - 仅激活（乐观）——单独一行，标注 `optimistic`
+
+本节 decode 是单个请求在整个 TP 组中的估算速率。权重已经除以 GPU 数，不能再乘一次 GPU 数。并发 L 是简化筛选指标，未模拟批处理中的权重复用；不能据此承诺吞吐或 SLA。测量协议见 [校准协议](../calibration.md)。
 
 ### 利用率系数——全部经验值，全部可覆盖
 
@@ -109,7 +112,7 @@ K = floor(单卡余量字节 / 单请求 KV 字节)
 ```
 和 fleet planner 同一逻辑。给定 K 的输入，结果确定。
 
-**标签**：`[估算]`——"余量"的计算假设 `--gpu-memory-utilization 0.9` 和 vLLM 实际表现一致。通常误差 2-3%。
+**标签**：`[估算]`——"余量"的计算假设 `--gpu-memory-utilization 0.9` 和 vLLM 实际表现一致。这个假设需要在目标硬件和引擎上测量。
 
 ### L 上限（SLA 下的算力/带宽）
 ```

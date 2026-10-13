@@ -175,12 +175,13 @@ def estimate_decode(
     effective_bw = bw_bytes_per_s * bw_utilization
     weight_per_gpu = max(1, total_weight_bytes // num_gpus)
     per_gpu_tps = effective_bw / weight_per_gpu
-    # Cluster-level: per-GPU × N × comm_efficiency × NVLink-aware penalty.
+    # A TP request advances when all ranks finish their shard. The weight
+    # division already accounts for N GPUs; apply communication losses once.
     # NVLink penalty captures TP all-reduce overhead on cards with restricted
     # interconnect (H800, PCIe-only). Single-GPU is unaffected.
     nvlink_eff = _nvlink_efficiency(gpu, num_gpus)
     effective_comm_eff = cluster_comm_efficiency * nvlink_eff
-    cluster_tps = per_gpu_tps * num_gpus * effective_comm_eff
+    cluster_tps = per_gpu_tps * effective_comm_eff
 
     # MoE active-only optimistic view
     moe_active_weight: AnnotatedValue[int] | None = None
@@ -194,13 +195,13 @@ def estimate_decode(
         )
         if active_bytes > 0:
             active_per_gpu_tps = effective_bw / active_bytes
-            active_cluster_tps = active_per_gpu_tps * num_gpus * effective_comm_eff
+            active_cluster_tps = active_per_gpu_tps * effective_comm_eff
             moe_active_tps = AnnotatedValue(
                 active_cluster_tps,
                 Label.ESTIMATED,
                 source=(
                     f"optimistic MoE active-only: effective_bw / {active_bytes:,} × "
-                    f"{num_gpus} × {effective_comm_eff:.3f}"
+                    f"{effective_comm_eff:.3f} comm efficiency"
                 ),
             )
 
@@ -222,12 +223,12 @@ def estimate_decode(
             cluster_tps,
             Label.ESTIMATED,
             source=(
-                f"per-GPU × {num_gpus} GPUs × {cluster_comm_efficiency:.0%} comm × "
+                f"TP rank throughput × {cluster_comm_efficiency:.0%} comm × "
                 f"{nvlink_eff:.3f} NVLink penalty (NVLink={gpu.nvlink_bandwidth_gbps or 0} GB/s)"
             ),
         ),
         bw_utilization=bw_utilization,
-        cluster_comm_efficiency=cluster_comm_efficiency,
+        cluster_comm_efficiency=effective_comm_eff,
         moe_active_weight_bytes_per_gpu=moe_active_weight,
         moe_active_tokens_per_sec=moe_active_tps,
     )

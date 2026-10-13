@@ -25,7 +25,6 @@ from llm_cal.model_source.modelscope import (
     _extract_files,
 )
 
-
 # ---------------------------------------------------------------------------
 # Mock infrastructure
 
@@ -211,9 +210,11 @@ class TestFetchErrorMapping:
                 return not_found
             return info_resp
 
-        with patch("httpx.get", side_effect=_stub):
-            with pytest.raises(ModelNotFoundError, match="not found"):
-                ModelScopeSource().fetch("nonexistent/model")
+        with (
+            patch("httpx.get", side_effect=_stub),
+            pytest.raises(ModelNotFoundError, match="not found"),
+        ):
+            ModelScopeSource().fetch("nonexistent/model")
 
     def test_file_list_401_raises_auth_required(self):
         info_resp = _resp(_wrapped({}))
@@ -224,9 +225,11 @@ class TestFetchErrorMapping:
                 return unauth
             return info_resp
 
-        with patch("httpx.get", side_effect=_stub):
-            with pytest.raises(AuthRequiredError, match="MODELSCOPE_API_TOKEN"):
-                ModelScopeSource().fetch("private/repo")
+        with (
+            patch("httpx.get", side_effect=_stub),
+            pytest.raises(AuthRequiredError, match="MODELSCOPE_API_TOKEN"),
+        ):
+            ModelScopeSource().fetch("private/repo")
 
     def test_file_list_403_raises_auth_required(self):
         info_resp = _resp(_wrapped({}))
@@ -237,9 +240,8 @@ class TestFetchErrorMapping:
                 return forbidden
             return info_resp
 
-        with patch("httpx.get", side_effect=_stub):
-            with pytest.raises(AuthRequiredError):
-                ModelScopeSource().fetch("private/repo")
+        with patch("httpx.get", side_effect=_stub), pytest.raises(AuthRequiredError):
+            ModelScopeSource().fetch("private/repo")
 
     def test_file_list_429_raises_source_unavailable(self):
         info_resp = _resp(_wrapped({}))
@@ -254,22 +256,20 @@ class TestFetchErrorMapping:
                 return rate_limited
             return info_resp
 
-        with patch("httpx.get", side_effect=_stub):
-            with pytest.raises(SourceUnavailableError, match="rate limit"):
-                ModelScopeSource().fetch("o/r")
+        with (
+            patch("httpx.get", side_effect=_stub),
+            pytest.raises(SourceUnavailableError, match="rate limit"),
+        ):
+            ModelScopeSource().fetch("o/r")
 
     def test_timeout_raises_source_unavailable(self):
         def _stub(url, *args, **kwargs):
-            if "/api/v1/models/owner/repo" == url.split("?")[0].rstrip("/").rsplit(
-                "/api/v1/models/owner/repo"
-            )[0] + "/api/v1/models/owner/repo":
-                # Info endpoint — soft fail (returns None internally), not raised
-                return _resp(_wrapped({}))
-            raise httpx.TimeoutException("network slow")
+            if "repo/files" in url:
+                raise httpx.TimeoutException("network slow")
+            return _resp(_wrapped({}))
 
-        with patch("httpx.get", side_effect=_stub):
-            with pytest.raises(SourceUnavailableError):
-                ModelScopeSource().fetch("owner/repo")
+        with patch("httpx.get", side_effect=_stub), pytest.raises(SourceUnavailableError):
+            ModelScopeSource().fetch("owner/repo")
 
     def test_malformed_envelope_raises(self):
         info_resp = _resp(_wrapped({}))
@@ -281,9 +281,11 @@ class TestFetchErrorMapping:
                 return bad_files
             return info_resp
 
-        with patch("httpx.get", side_effect=_stub):
-            with pytest.raises(SourceUnavailableError, match="unexpected shape"):
-                ModelScopeSource().fetch("o/r")
+        with (
+            patch("httpx.get", side_effect=_stub),
+            pytest.raises(SourceUnavailableError, match="unexpected shape"),
+        ):
+            ModelScopeSource().fetch("o/r")
 
     def test_config_invalid_json(self):
         info_resp = _resp(_wrapped({}))
@@ -293,9 +295,11 @@ class TestFetchErrorMapping:
         def _stub(url, *args, **kwargs):
             return _route(url, kwargs, info_resp, files_resp, config_resp)
 
-        with patch("httpx.get", side_effect=_stub):
-            with pytest.raises(SourceUnavailableError, match="config.json"):
-                ModelScopeSource().fetch("o/r")
+        with (
+            patch("httpx.get", side_effect=_stub),
+            pytest.raises(SourceUnavailableError, match=r"config\.json"),
+        ):
+            ModelScopeSource().fetch("o/r")
 
     def test_config_not_an_object(self):
         info_resp = _resp(_wrapped({}))
@@ -306,9 +310,11 @@ class TestFetchErrorMapping:
         def _stub(url, *args, **kwargs):
             return _route(url, kwargs, info_resp, files_resp, config_resp)
 
-        with patch("httpx.get", side_effect=_stub):
-            with pytest.raises(SourceUnavailableError, match="JSON object"):
-                ModelScopeSource().fetch("o/r")
+        with (
+            patch("httpx.get", side_effect=_stub),
+            pytest.raises(SourceUnavailableError, match="JSON object"),
+        ):
+            ModelScopeSource().fetch("o/r")
 
     def test_info_endpoint_failure_falls_back_to_master(self):
         """If model info fails, we still call files + config with revision=master."""
@@ -329,3 +335,28 @@ class TestFetchErrorMapping:
             artifact = ModelScopeSource().fetch("owner/repo")
         assert artifact.commit_sha is None
         assert all(r == "master" for r in captured_revisions)
+
+
+def test_header_uses_source_endpoint_and_master_without_commit(tmp_path, load_config):
+    from llm_cal.core.cache import ArtifactCache
+    from llm_cal.core.evaluator import Evaluator
+
+    files = _resp(_wrapped({"Files": [{"Path": "model.safetensors", "Size": 100}]}))
+    config = _raw_resp(json.dumps(load_config("mistral_sliding")).encode())
+
+    def route(url, **kwargs):
+        return _route(url, kwargs, _resp(_wrapped({})), files, config)
+
+    source = ModelScopeSource(endpoint="https://mirror.invalid", token="request-ms")
+    ev = Evaluator(source, ArtifactCache(tmp_path))
+    with (
+        patch("httpx.get", side_effect=route),
+        patch("llm_cal.core.evaluator.fetch_tensor_dtypes", return_value=None) as header,
+    ):
+        try:
+            ev.evaluate("a/b", "H100", "vllm")
+        finally:
+            ev.close()
+    assert header.call_args.kwargs["revision"] == "master"
+    assert header.call_args.kwargs["endpoint"] == "https://mirror.invalid"
+    assert header.call_args.kwargs["token"] == "request-ms"

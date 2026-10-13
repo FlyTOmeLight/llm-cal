@@ -40,7 +40,7 @@ llm-cal reads real bytes from the HF API, reconciles against every known quantiz
 Quantization reconciliation
   FP4_FP8_MIXED    160.01 GB   0.2%  ← wins (tied with GPTQ_INT4, AWQ_INT4
   GPTQ_INT4        160.01 GB   0.2%    at bpp=0.55 — need per-tensor dtype
-  AWQ_INT4         160.01 GB   0.2%    to distinguish, deferred to v0.2)
+  AWQ_INT4         160.01 GB   0.2%    to distinguish, resolved from sampled headers when available)
   FP8              290.94 GB  45.1%  ← the gpu_poor trap
 ```
 
@@ -113,14 +113,14 @@ export LLM_CAL_REVIEWER_BASE_URL=https://api.deepseek.com/v1
 export LLM_CAL_REVIEWER_MODEL=deepseek-chat
 llm-cal deepseek-ai/DeepSeek-V3 --gpu H800 --explain --llm-review
 
-# All 53 supported GPUs
+# List supported GPUs
 llm-cal --list-gpus
 
 # Run the curated benchmark (8 models × 33 checks vs reference truth)
 llm-cal --benchmark
 ```
 
-Abbreviated output:
+Illustrative output (run the CLI for current model estimates):
 
 ```
 ┌─ deepseek-ai/DeepSeek-V4-Flash  via huggingface @ 6c858e7 ─┐
@@ -143,7 +143,7 @@ Fleet — H800
 
 Performance — dev tier (4× H800)
   prefill latency   735 ms @ 2000 input tokens     [estimated, Kaplan 2020]
-  decode throughput 48 tok/s per user              [estimated, Kwon SOSP 2023]
+  decode throughput <estimate> tok/s per user              [estimated, Kwon SOSP 2023]
   bottleneck        memory bandwidth               [inferred]
 
 Generated command
@@ -162,6 +162,7 @@ llm-cal [MODEL_ID] [OPTIONS]
 
 Core:
   --gpu TEXT                     GPU id (see --list-gpus). Aliases accepted, case-insensitive.
+  --source [huggingface|modelscope]  Default: huggingface
   --engine [vllm|sglang]         Default: vllm
   --gpu-count INT                Force fleet size (skips min/dev/prod auto-pick)
   --context-length INT           Context length for KV cache estimation
@@ -181,14 +182,14 @@ Introspection:
                                  Requires: LLM_CAL_REVIEWER_API_KEY / _BASE_URL / _MODEL
 
 Meta:
-  --list-gpus                    List all 53 supported GPUs and exit
+  --list-gpus                    List supported GPUs and exit
   --benchmark                    Run the curated dataset (8 models × 33 checks)
   --refresh                      Bypass cache, re-fetch from HF/ModelScope
 ```
 
 ---
 
-## Supported hardware (53 GPUs)
+## Supported hardware
 
 | Vendor | Models |
 |---|---|
@@ -240,7 +241,7 @@ Full matrix: [`src/llm_cal/engine_compat/matrix.yaml`](src/llm_cal/engine_compat
 | `mistralai/Mixtral-8x7B-v0.1` | 93 GB | 93.41 GB | FP16 (MoE) | ✓ |
 | `microsoft/Phi-4` | 28 GB | 28.17 GB | FP16 | ✓ |
 
-Exit code 0 on all-pass, 1 on any FAIL. Runnable in CI.
+Exit code 0 only when every check passes; FAIL, SKIP, or an empty run returns 1. Network-dependent.
 
 ---
 
@@ -251,7 +252,7 @@ Every formula and coefficient has a primary source. No magic numbers.
 - **Prefill FLOPs**: `2 × params × input_tokens` (Kaplan et al. 2020, *Scaling Laws for Neural Language Models*)
 - **Decode throughput**: `bandwidth × util / weight_bytes` (Kwon et al. SOSP 2023, *Efficient Memory Management for LLM Serving with PagedAttention*)
 - **KV cache layout**: matches vLLM `PagedAttention` and SGLang `RadixAttention` source behavior
-- **TP sharding**: `per_gpu_KV = total_KV / min(tp_size, num_kv_heads)` — empirically verified against vLLM runtime
+- **TP sharding**: `per_gpu_KV = total_KV / min(tp_size, num_kv_heads)` — a modeled sharding rule; real hardware calibration is tracked in issue #12
 - **Utilization coefficients**: `prefill_util=0.40`, `decode_bw_util=0.50`, `concurrency_degradation=1.0` (honest defaults; override per-workload via CLI flags)
 
 Full writeup with citations: [`docs/methodology.md`](docs/methodology.md) · [中文](docs/zh/methodology.md).
@@ -273,6 +274,7 @@ Full writeup with citations: [`docs/methodology.md`](docs/methodology.md) · [�
 **Shipped:**
 
 - HuggingFace + ModelScope as model sources, real bytes from `safetensors` metadata
+- Per-tensor dtype and quantization markers from one sampled safetensors header; whole-model scheme remains inferred
 - Architecture detection: Dense / MoE / GQA / MQA / MLA / NSA / CSA+HCA / Sliding Window
 - KV cache with traits composition, TP-aware sharding
 - Fleet planner (min/dev/prod, TP divisibility)
@@ -285,11 +287,10 @@ Full writeup with citations: [`docs/methodology.md`](docs/methodology.md) · [�
 - `--llm-review` opt-in LLM audit (any OpenAI-compatible endpoint)
 - `--benchmark` curated regression suite
 - `--list-gpus` discovery
-- 53-GPU database with `spec_source` traceability
+- GPU database with `spec_source` traceability
 
 **v0.2 roadmap:**
 
-- Per-tensor dtype read from `safetensors` metadata (distinguishes FP4/GPTQ/AWQ tie)
 - Lazy matrix loading when entries > 100
 - Ollama / GGUF support
 - Multimodal models (Qwen-VL, InternVL)

@@ -18,6 +18,10 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
+from llm_cal.architecture.formulas.kv_cache import (
+    _average_csa_hca_ratio,
+    _per_layer_per_token_bytes,
+)
 from llm_cal.core.evaluator import EvaluationReport
 
 
@@ -49,6 +53,7 @@ def build(report: EvaluationReport) -> list[ExplainEntry]:
     entries: list[ExplainEntry] = []
 
     _weight_bytes(report, entries)
+    _params(report, entries)
     _quantization(report, entries)
     _kv_cache_contexts(report, entries)
     _fleet_tiers(report, entries)
@@ -74,16 +79,30 @@ def _weight_bytes(report: EvaluationReport, entries: list[ExplainEntry]) -> None
                 ExplainInput(
                     name="HF model_info API",
                     value=f"source={report.source}, sha={report.commit_sha or 'HEAD'}",
-                    label="[verified]",
+                    label=f"[{w.label.value}]",
                 ),
             ],
             steps=[
                 f"Raw value from API = {w.value:,} bytes",
                 f"= {w.value / 1e9:.2f} GB",
             ],
-            result=f"{w.value:,} bytes [verified]",
+            result=f"{w.value:,} bytes [{w.label.value}]",
             source=w.source or "HF siblings API",
             methodology_anchor="#weight-bytes",
+        )
+    )
+
+
+def _params(report: EvaluationReport, entries: list[ExplainEntry]) -> None:
+    av = report.total_params_estimate
+    entries.append(
+        ExplainEntry(
+            heading="Parameter estimate (#params-estimate)",
+            formula=av.source or "unknown",
+            steps=[f"result = {av.value:,} parameters"],
+            result=f"{av.value:,} [{av.label.value}]",
+            source="Architecture shape estimate; includes all resident MoE experts",
+            methodology_anchor="#weight-by-assumption",
         )
     )
 
@@ -92,36 +111,32 @@ def _quantization(report: EvaluationReport, entries: list[ExplainEntry]) -> None
     r = report.reconciliation
     if not r.candidates:
         return
-    best = r.candidates[0]
-    cands_table = "\n".join(
-        f"      {c.scheme:<16} predicted={c.predicted_bytes / 1e9:.2f} GB  "
-        f"error={c.relative_error * 100:.1f}%"
+    selected = next((c for c in r.candidates if c.scheme == r.best.value), None)
+    candidates = [
+        f"{c.scheme}: {c.predicted_bytes:,} predicted bytes, {c.relative_error:.1%} error"
         for c in r.candidates[:6]
-    )
+    ]
     entries.append(
         ExplainEntry(
             heading="Quantization scheme (reconciliation)",
-            formula="best_match = argmin_scheme |observed_bytes - scheme.bpp × total_params|",
+            formula="predicted_bytes = scheme.bpp × total_params; select using available evidence or nearest bytes anchor",
             inputs=[
                 ExplainInput(
-                    name="observed_bytes",
-                    value=f"{r.observed_bytes:,}",
-                    label="[verified]",
+                    "observed_bytes",
+                    f"{r.observed_bytes:,}",
+                    f"[{report.weight.total_bytes.label.value}]",
                 ),
                 ExplainInput(
-                    name="total_params",
-                    value=f"{r.total_params:,}",
-                    label="[estimated]",
-                    note="from architecture formula — see '#params-estimate' entry below",
+                    "total_params", f"{r.total_params:,}", "[estimated]", note="#params-estimate"
                 ),
             ],
             steps=[
-                "For each known quantization scheme, predict total bytes = bpp × params:",
-                cands_table,
-                f"Winner: {best.scheme} at {best.relative_error * 100:.1f}% error",
+                *candidates,
+                f"Selection: {r.best.value}"
+                + (f" ({selected.relative_error:.1%} error)" if selected else ""),
             ],
             result=f"{r.best.value} [{r.best.label.value}]",
-            source="Nearest-anchor match against known bytes-per-param values",
+            source=r.best.source or "No authoritative quantization evidence",
             methodology_anchor="#quantization-scheme",
         )
     )
@@ -137,73 +152,47 @@ def _kv_cache_contexts(report: EvaluationReport, entries: list[ExplainEntry]) ->
     attn = profile.attention
     if attn is None:
         return
-
-    is_mla = attn.variant == "MLA"
-    is_csa_hca = attn.variant == "CSA_HCA"
-
     for ctx, av in report.kv_cache_by_context.items():
         if av.value == 0:
             continue
-        # Rebuild the computation for transparency
-        if is_mla and attn.kv_lora_rank:
-            per_tok_per_layer = attn.kv_lora_rank * 2  # kv_lora_rank × dtype(2)
-            formula = "per_tok_per_layer = kv_lora_rank × dtype_bytes   (MLA: compressed latent KV)"
-            inputs = [
-                ExplainInput("kv_lora_rank", str(attn.kv_lora_rank), "[verified]"),
-                ExplainInput("dtype_bytes", "2", "[verified]", note="BF16/FP16"),
-                ExplainInput("seq_len", f"{ctx:,}", "[verified]"),
-                ExplainInput("num_layers", str(profile.num_hidden_layers), "[verified]"),
+        effective_seq = ctx
+        steps = []
+        if profile.sliding_window and attn.variant not in ("CSA_HCA", "NSA"):
+            effective_seq = min(ctx, profile.sliding_window)
+            steps.append(
+                f"effective_seq = min({ctx:,}, sliding_window={profile.sliding_window:,}) = {effective_seq:,}"
+            )
+        per_token = _per_layer_per_token_bytes(attn, 2)
+        baseline = per_token * effective_seq * profile.num_hidden_layers
+        steps.extend(
+            [
+                f"per_token_per_layer = {per_token:,} bytes",
+                f"baseline = {per_token:,} × {effective_seq:,} × {profile.num_hidden_layers} = {baseline:,} bytes",
             ]
-        else:
-            per_tok_per_layer = 2 * attn.num_kv_heads * attn.head_dim * 2
-            formula = "per_tok_per_layer = 2 × num_kv_heads × head_dim × dtype_bytes   (standard attention)"
-            inputs = [
-                ExplainInput("num_kv_heads", str(attn.num_kv_heads), "[verified]"),
-                ExplainInput("head_dim", str(attn.head_dim), "[verified]"),
-                ExplainInput("dtype_bytes", "2", "[verified]", note="BF16/FP16"),
-                ExplainInput("seq_len", f"{ctx:,}", "[verified]"),
-                ExplainInput("num_layers", str(profile.num_hidden_layers), "[verified]"),
-            ]
-
-        baseline = per_tok_per_layer * ctx * profile.num_hidden_layers
-        steps = [
-            f"per_tok_per_layer = {per_tok_per_layer:,} bytes",
-            f"baseline = per_tok_per_layer × seq_len × num_layers = {baseline:,} bytes",
-        ]
-
-        if is_csa_hca and attn.compress_ratios:
-            ratios = attn.compress_ratios
-            avg = sum(1.0 if r == 0 else 1.0 / r for r in ratios) / len(ratios)
-            inputs.append(
-                ExplainInput(
-                    "compress_ratios",
-                    f"len={len(ratios)} (avg keep-fraction={avg:.4f})",
-                    "[verified]",
-                )
+        )
+        if attn.variant == "CSA_HCA" and attn.compress_ratios:
+            ratio = _average_csa_hca_ratio(attn.compress_ratios)
+            steps.append(
+                f"compress_keep_fraction = {ratio:.8f}; int(baseline × fraction) = {av.value:,}"
             )
-            formula += (
-                "\napply_csa_hca: baseline × avg(1/r_i for r_i in compress_ratios, 0 = keep-all=1)"
+        if attn.variant == "NSA" and attn.nsa_topk and attn.nsa_topk > 0:
+            ratio = min(1.0, attn.nsa_topk / effective_seq)
+            steps.append(
+                f"NSA keep_fraction = min(1, {attn.nsa_topk} / {effective_seq}) = {ratio:.8f}; int(baseline × fraction) = {av.value:,}"
             )
-            steps.extend(
-                [
-                    f"avg_keep_fraction = {avg:.4f}",
-                    f"result = baseline × avg_keep_fraction = {av.value:,} bytes",
-                ]
-            )
-        else:
-            steps.append(f"result = baseline = {av.value:,} bytes")
-
+        steps.append(f"result = {av.value:,} bytes")
         entries.append(
             ExplainEntry(
                 heading=f"KV cache @ {_fmt_ctx(ctx)} context",
-                formula=formula,
-                inputs=inputs,
+                formula=av.source or "KV cache estimate",
+                inputs=[
+                    ExplainInput("seq_len", f"{ctx:,}", "[inferred]"),
+                    ExplainInput("dtype_bytes", "2", "[estimated]", note="BF16/FP16 assumption"),
+                    ExplainInput("num_layers", str(profile.num_hidden_layers), "[verified]"),
+                ],
                 steps=steps,
                 result=f"{av.value:,} bytes = {av.value / 1e9:.2f} GB [{av.label.value}]",
-                source=(
-                    "DeepSeek-V2 paper (MLA); DeepSeek-V4 tech report (CSA+HCA); "
-                    "standard attention formula per Attention Is All You Need (Vaswani 2017)"
-                ),
+                source=av.source or "Architecture KV estimate",
                 methodology_anchor="#kv-cache-per-request",
             )
         )
@@ -230,12 +219,9 @@ def _fleet_tiers(report: EvaluationReport, entries: list[ExplainEntry]) -> None:
             f"headroom per GPU = usable - weight = {headroom:,} bytes ({headroom / 1e9:.2f} GB)",
         ]
         fit_criterion = {"min": 1, "dev": 8, "prod": 16}.get(tier_label, 1)
+        steps.append(f"tier criterion: headroom ≥ {fit_criterion} × per_GPU_KV_at_reference_ctx")
         steps.append(
-            f"tier criterion: headroom ≥ weight_per_gpu + {fit_criterion} × kv_per_request_128K"
-        )
-        steps.append(
-            f"smallest TP count in {list(report.fleet.valid_tp_sizes)} that "
-            f"satisfies the criterion: {opt.gpu_count}"
+            f"selected TP count: {opt.gpu_count}; valid candidates: {list(report.fleet.valid_tp_sizes)}"
         )
         if not opt.fits:
             steps.append(
@@ -356,14 +342,16 @@ def _decode(report: EvaluationReport, entries: list[ExplainEntry]) -> None:
         report.fleet.options[0].gpu_count,
     )
     weight_per_gpu = d.active_weight_bytes_per_gpu.value
+    if weight_per_gpu <= 0:
+        return
     effective_bw_gbs = bw * d.bw_utilization
     steps = [
         f"weight_per_gpu = {report.weight.total_bytes.value:,} / {chosen} = "
         f"{weight_per_gpu:,} bytes ({weight_per_gpu / 1e9:.2f} GB)",
         f"effective_bw = {bw} × {d.bw_utilization:.2f} = {effective_bw_gbs:.0f} GB/s",
-        f"per_gpu_tok_per_sec = effective_bw / weight_per_gpu = "
+        f"rank_tok_per_sec = effective_bw / weight_per_gpu = "
         f"{effective_bw_gbs * 1e9 / weight_per_gpu:.1f} tok/s",
-        f"cluster_tok_per_sec = per_gpu × {chosen} × "
+        f"TP_group_tok_per_sec = rank_tok_per_sec × "
         f"{d.cluster_comm_efficiency:.2f} = {d.cluster_tokens_per_sec.value:.1f} tok/s",
     ]
     entries.append(
@@ -371,7 +359,7 @@ def _decode(report: EvaluationReport, entries: list[ExplainEntry]) -> None:
             heading="Decode throughput (cluster)",
             formula=(
                 "per_gpu_tok_per_sec = memory_bandwidth × bw_util / weight_bytes_per_gpu\n"
-                "cluster_tok_per_sec = per_gpu × num_gpus × cluster_comm_efficiency"
+                "TP_group_tok_per_sec = rank_tok_per_sec × effective_comm_efficiency"
             ),
             inputs=[
                 ExplainInput(
@@ -392,12 +380,12 @@ def _decode(report: EvaluationReport, entries: list[ExplainEntry]) -> None:
                     "cluster_comm_efficiency",
                     f"{d.cluster_comm_efficiency:.2f}",
                     "[user-set]",
-                    note="NCCL AllReduce efficiency on NVLink, default 0.90",
+                    note="effective communication coefficient including the interconnect penalty",
                 ),
             ],
             steps=steps,
             result=f"{d.cluster_tokens_per_sec.value:.1f} tok/s [estimated]",
-            source="vLLM paper (Kwon et al. SOSP 2023, arxiv.org/abs/2309.06180)",
+            source=d.cluster_tokens_per_sec.source or "TP bandwidth model",
             methodology_anchor="#decode-tokens-per-second",
         )
     )

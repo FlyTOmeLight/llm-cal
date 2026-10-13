@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from llm_cal.core.explain import ExplainEntry, ExplainInput
@@ -145,3 +147,24 @@ def test_cli_flag_is_wired():
     assert "llm_review" in sig.parameters, (
         f"Expected --llm-review flag wired into main(); got parameters: {list(sig.parameters)}"
     )
+
+
+def test_explicit_review_credentials_override_environment(monkeypatch):
+    from unittest.mock import patch
+
+    import httpx
+
+    monkeypatch.setenv("LLM_CAL_REVIEWER_API_KEY", "server-secret")
+    with patch("httpx.Client") as client:
+        client.return_value.__enter__.return_value.post.return_value = httpx.Response(
+            200, json={"choices": [{"message": {"content": "review"}}]}
+        )
+        result = run_review(
+            [], "en", api_key="user-key", base_url="https://review.invalid/v1", model="user-model"
+        )
+    post = client.return_value.__enter__.return_value.post
+    assert result.ok
+    assert post.call_args.kwargs["headers"]["Authorization"] == "Bearer user-key"
+    assert post.call_args.kwargs["json"]["model"] == "user-model"
+    assert post.call_args.args[0] == "https://review.invalid/v1/chat/completions"
+    assert os.environ["LLM_CAL_REVIEWER_API_KEY"] == "server-secret"

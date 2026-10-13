@@ -65,6 +65,16 @@ class ArtifactCache:
             return
         self._cache.set(key.to_string(), _serialize_artifact(artifact), expire=self._ttl)
 
+    def get_tensor_dtypes(self, key: CacheKey, shard: str) -> dict[str, str] | None:
+        if key.commit_sha is None:
+            return None
+        raw: dict[str, str] | None = self._cache.get((key.to_string(), "dtypes", shard))
+        return raw
+
+    def set_tensor_dtypes(self, key: CacheKey, shard: str, dtypes: dict[str, str]) -> None:
+        if key.commit_sha is not None:
+            self._cache.set((key.to_string(), "dtypes", shard), dtypes, expire=self._ttl)
+
     def invalidate(self, key: CacheKey) -> bool:
         """Explicit invalidation, returns True if something was removed."""
         return bool(self._cache.delete(key.to_string()))

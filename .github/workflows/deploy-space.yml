@@ -16,6 +16,8 @@ on:
     branches: [main]
     paths:
       - 'web/**'
+      - 'pyproject.toml'
+      - '.github/workflows/ci.yml'
       - 'src/llm_cal/**'
       - '.github/workflows/deploy-space.yml'
   workflow_dispatch:
@@ -28,7 +30,11 @@ env:
   HF_SPACE: llm-cal
 
 jobs:
+  validate:
+    uses: ./.github/workflows/ci.yml
+
   deploy:
+    needs: validate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,7 +52,13 @@ jobs:
           mkdir -p deploy/src
           cp web/app.py          deploy/app.py
           cp web/README.md       deploy/README.md
-          cp web/requirements.txt deploy/requirements.txt
+          python - <<'PYTHON'
+          import tomllib
+          from pathlib import Path
+          deps = tomllib.loads(Path("pyproject.toml").read_text())["project"]["dependencies"]
+          web = Path("web/requirements.txt").read_text()
+          Path("deploy/requirements.txt").write_text(web + chr(10).join(deps) + chr(10))
+          PYTHON
           rsync -a \
             --exclude='__pycache__' \
             --exclude='*.pyc' \

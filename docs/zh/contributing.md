@@ -9,7 +9,7 @@ git clone https://github.com/FlyTOmeLight/llm-cal.git
 cd llm-cal
 python3.11 -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev]"
+pip install -e ".[dev]" -r web/requirements.txt
 
 # 一次性：安装 pre-commit hooks
 pre-commit install
@@ -53,7 +53,7 @@ PR 合并前这些都是硬要求。
 
 ### 4. 新数据源
 
-ModelScope SDK 决策待定——见 `docs/adr/001-modelscope-integration-strategy.md`。未来的数据源（本地目录、自定义 registry）放 `src/llm_cal/model_source/`。
+ModelScope 已按 ADR-001 采用 httpx REST 实现，见[决策记录](../adr/001-modelscope-integration-strategy.md)。未来的数据源（本地目录、自定义 registry）放 `src/llm_cal/model_source/`。
 
 ---
 
@@ -82,7 +82,7 @@ ModelScope SDK 决策待定——见 `docs/adr/001-modelscope-integration-strate
 - Ruff 格式化，行宽 100
 - mypy strict mode，`# type: ignore` 必须带 reason 注释
 - Pydantic v2 用于所有 YAML schema
-- `cli.py` 保持精简（< 60 行），orchestration 放 `core/evaluator.py`
+- `cli.py` 负责参数与输出，编排和输入校验放在 `core/evaluator.py`
 
 中文标点在 i18n / 面向中文用户的错误消息里是故意的。如果你新加一个带中文内容的文件，记得把路径加到 `pyproject.toml` 的 ruff `per-file-ignores` 白名单里（RUF001/RUF002/RUF003）。
 
@@ -113,7 +113,7 @@ ModelScope SDK 决策待定——见 `docs/adr/001-modelscope-integration-strate
 
 - **优先 fixture 复用而非 mock** 做 config 相关测试。真实模型的 config.json 样本放 `tests/fixtures/configs/`。
 
-- **CI 中禁止网络调用**。用 `responses` 库的 fixture 回放（`scripts/capture-fixtures.py` 负责采集——v0.1 收尾规划中）。
+- **CI 中禁止网络调用**。使用 config fixture、fake source 和 HTTP stub；httpx 调用直接替换 HTTP 边界，`responses` 面向 requests。
 
 ---
 

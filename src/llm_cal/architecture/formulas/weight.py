@@ -55,7 +55,7 @@ def estimate_total_params(profile: ArchitectureProfile) -> AnnotatedValue[int]:
         total,
         Label.ESTIMATED,
         source=(
-            f"{vocab} vocab * {hidden} hidden * 2 (embed+head) + "
+            f"{embed_params:,} embedding + {output_head_params:,} output head + "
             f"{n_layers} layers * ({attn_params:,} attn + {ffn_params:,} ffn + norms)"
         ),
     )
