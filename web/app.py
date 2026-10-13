@@ -214,8 +214,10 @@ def _render(report: EvaluationReport, locale: str) -> str:
     prod_opt = (
         next((o for o in (f.options if f else []) if o.tier == "prod"), None) if f else None
     )
-    prod_gpus = str(prod_opt.gpu_count) if prod_opt else "—"
+    prod_gpus = str(prod_opt.gpu_count) if prod_opt and prod_opt.fits else "—"
     prod_concurrent = str(prod_opt.max_concurrent_at_reference_ctx) if prod_opt else "—"
+
+    reference_label = f"{f.reference_context_length // 1024}K" if f else "—"
 
     headline = (
         f"<div class='lc-header'>"
@@ -227,12 +229,14 @@ def _render(report: EvaluationReport, locale: str) -> str:
         f"{_stat_card('Weight' if not is_zh else '权重', weight_str, sublabel='from safetensors API' if not is_zh else '取自 safetensors API', chip=weight_chip)}"
         f"{_stat_card('Quantization' if not is_zh else '量化', _esc(w.quantization_guess.value), sublabel='resolved scheme' if not is_zh else '已识别方案', chip=quant_chip)}"
         f"{_stat_card('Prod GPUs' if not is_zh else 'Prod GPU 数', prod_gpus, sublabel='for 16-user prod' if not is_zh else '生产档（16 路并发）')}"
-        f"{_stat_card('Users @ 128K' if not is_zh else '用户 @ 128K', prod_concurrent, sublabel='concurrent at prod tier' if not is_zh else '生产档的并发')}"
+        f"{_stat_card(('Users @ ' + reference_label) if not is_zh else ('用户 @ ' + reference_label), prod_concurrent, sublabel='concurrent at prod tier' if not is_zh else '生产档的并发')}"
         f"</div>"
     )
 
     # Provenance footer for the headline
     quant_source = _esc(w.quantization_guess.source or "")
+    if w.total_bytes.label.value == "unknown":
+        quant_source += " · " + _esc(w.total_bytes.source or "")
     headline += f"<div class='lc-prov'>{quant_source}</div>"
 
     # ---- Architecture --------------------------------------------------------
@@ -331,8 +335,8 @@ def _render(report: EvaluationReport, locale: str) -> str:
 
         rows = []
         for opt in f.options:
-            star = " ★" if opt.tier == f.best_tier else ""
-            cls = " class='lc-best'" if opt.tier == f.best_tier else ""
+            star = " ★" if opt.fits and opt.tier == f.best_tier else ""
+            cls = " class='lc-best'" if opt.fits and opt.tier == f.best_tier else ""
             headroom = max(0, opt.usable_bytes_per_gpu - opt.weight_bytes_per_gpu)
             ctx_map = dict(opt.max_concurrent_by_context)
             ctx_cells = "".join(f"<td>{ctx_map.get(c, '—')}</td>" for c in ctx_cols)
@@ -341,7 +345,7 @@ def _render(report: EvaluationReport, locale: str) -> str:
                 f"<td>{opt.gpu_count}</td>"
                 f"<td>{_fmt_bytes(opt.weight_bytes_per_gpu)}</td>"
                 f"<td>{_fmt_bytes(headroom)}</td>"
-                f"{ctx_cells}</tr>"
+                f"{ctx_cells}<td>{_esc(opt.reason_zh if is_zh else opt.reason_en)}</td></tr>"
             )
 
         ctx_headers = "".join(
@@ -351,8 +355,8 @@ def _render(report: EvaluationReport, locale: str) -> str:
         fleet_explainer = (
             "min = 刚好放得下；dev = 8 路并发场景；prod = 16 路并发场景。★ = 推荐。"
             if is_zh
-            else "min = barely fits weights; dev = sized for 8 concurrent at 128K; "
-            "prod = sized for 16 concurrent at 128K. ★ = recommended."
+            else "min = barely fits weights; dev = sized for 8 concurrent at the reference context; "
+            "prod = sized for 16 concurrent at the reference context. ★ = recommended."
         )
         fleet_section = (
             f"<div class='lc-section'>"
@@ -361,7 +365,7 @@ def _render(report: EvaluationReport, locale: str) -> str:
             f"<table class='lc-table'>"
             f"<thead><tr><th>Tier</th><th>GPUs</th>"
             f"<th>Weight/GPU</th><th>Headroom/GPU</th>"
-            f"{ctx_headers}</tr></thead>"
+            f"{ctx_headers}<th>{'状态' if is_zh else 'Status'}</th></tr></thead>"
             f"<tbody>{''.join(rows)}</tbody></table></div>"
         )
 
@@ -385,7 +389,7 @@ def _render(report: EvaluationReport, locale: str) -> str:
                 f"@ {report.perf_input_tokens or 2000} input tokens",
             ),
             (
-                "Cluster decode" if not is_zh else "集群 decode 吞吐",
+                "TP decode (single request)" if not is_zh else "TP decode（单请求）",
                 f"{report.decode.cluster_tokens_per_sec.value:.0f} tok/s",
                 "",
             ),
@@ -1022,36 +1026,25 @@ def calculate(
     # Resolve source key. The radio shows e.g. "HuggingFace" / "ModelScope".
     src_key = "modelscope" if "modelscope" in source.lower() else "huggingface"
 
-    # Inject user-provided tokens into env for the duration of this call only.
-    # We restore the prior values in the finally block so a token entered for
-    # one model doesn't leak into the next request from a different user.
-    token_env_keys = (
-        "HF_TOKEN",
-        "HUGGING_FACE_HUB_TOKEN",
-        "MODELSCOPE_API_TOKEN",
-        "MODELSCOPE_TOKEN",
-    )
-    old_token_env = {k: os.environ.get(k) for k in token_env_keys}
-    if hf_token and hf_token.strip():
-        os.environ["HF_TOKEN"] = hf_token.strip()
-    if ms_token and ms_token.strip():
-        os.environ["MODELSCOPE_API_TOKEN"] = ms_token.strip()
+    request_source = (ModelScopeSource(token=ms_token.strip()) if src_key == "modelscope"
+                      else HuggingFaceSource(token=hf_token.strip()))
+    evaluator = Evaluator(source=request_source)
 
     def _eval_one(g: str) -> EvaluationReport:
-        return _get_evaluator(src_key).evaluate(
+        return evaluator.evaluate(
             model_id=model_id.strip(),
             gpu=g,
             engine=engine,
-            gpu_count=gpu_count if gpu_count and gpu_count > 0 else None,
-            context_length=context_length if context_length and context_length > 0 else None,
+            gpu_count=gpu_count if gpu_count not in (None, 0) else None,
+            context_length=context_length if context_length not in (None, 0) else None,
             refresh=refresh,
-            input_tokens=int(input_tokens) if input_tokens else 2000,
-            output_tokens=int(output_tokens) if output_tokens else 512,
-            target_tokens_per_sec=float(target_tps) if target_tps else 30.0,
-            prefill_utilization=float(prefill_util) if prefill_util else 0.40,
-            decode_bw_utilization=float(decode_bw_util) if decode_bw_util else 0.50,
+            input_tokens=int(input_tokens),
+            output_tokens=int(output_tokens),
+            target_tokens_per_sec=float(target_tps),
+            prefill_utilization=float(prefill_util),
+            decode_bw_utilization=float(decode_bw_util),
             concurrency_degradation=(
-                float(concurrency_degradation) if concurrency_degradation else 1.0
+                float(concurrency_degradation)
             ),
         )
 
@@ -1079,37 +1072,17 @@ def calculate(
             if explain:
                 explain_html = _render_explain(entries, is_zh)
             if llm_review:
-                # Only set env vars if user actually provided them — never persist
-                # them in env beyond this call's scope (they live in process env
-                # for the duration of the call, but we don't persist to disk).
-                old_env = {
-                    "LLM_CAL_REVIEWER_API_KEY": os.environ.get("LLM_CAL_REVIEWER_API_KEY"),
-                    "LLM_CAL_REVIEWER_BASE_URL": os.environ.get("LLM_CAL_REVIEWER_BASE_URL"),
-                    "LLM_CAL_REVIEWER_MODEL": os.environ.get("LLM_CAL_REVIEWER_MODEL"),
-                }
-                try:
-                    if llm_api_key.strip():
-                        os.environ["LLM_CAL_REVIEWER_API_KEY"] = llm_api_key.strip()
-                    if llm_base_url.strip():
-                        os.environ["LLM_CAL_REVIEWER_BASE_URL"] = llm_base_url.strip()
-                    if llm_model.strip():
-                        os.environ["LLM_CAL_REVIEWER_MODEL"] = llm_model.strip()
-                    result = run_review(entries, locale=locale)  # type: ignore[arg-type]
-                finally:
-                    for k, v in old_env.items():
-                        if v is None:
-                            os.environ.pop(k, None)
-                        else:
-                            os.environ[k] = v
+                result = run_review(
+                    entries, locale=locale,  # type: ignore[arg-type]
+                    api_key=llm_api_key.strip(),
+                    base_url=llm_base_url.strip() or "https://api.openai.com/v1",
+                    model=llm_model.strip() or "gpt-4o",
+                )
                 llm_html = _render_llm_review(result.content, result.error, result.model, is_zh)
 
         return main_html, explain_html, llm_html
     finally:
-        for k, v in old_token_env.items():
-            if v is None:
-                os.environ.pop(k, None)
-            else:
-                os.environ[k] = v
+        evaluator.close()
 
 
 def show_loading(lang: str) -> tuple[str, str, str]:

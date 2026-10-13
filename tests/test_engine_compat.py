@@ -60,3 +60,29 @@ def test_llama_supported_on_both_engines():
     sglang_entry = find_match(engine="sglang", model_type="llama")
     assert vllm_entry is not None and vllm_entry.support == "full"
     assert sglang_entry is not None and sglang_entry.support == "full"
+
+
+def test_cited_and_verified_require_matching_evidence():
+    import pytest
+    from pydantic import ValidationError
+
+    from llm_cal.engine_compat.loader import EngineCompatEntry
+
+    base = dict(engine="vllm", version_spec=">=1.0", matches_model_type="llama", support="full")
+    for level in ("cited", "verified"):
+        with pytest.raises(ValidationError):
+            EngineCompatEntry(**base, verification_level=level)
+    entry = EngineCompatEntry(
+        **base,
+        verification_level="verified",
+        sources=[
+            {
+                "type": "tested",
+                "tester": "tester",
+                "date": "2026-10-13",
+                "hardware": "H100",
+                "metrics": {"decode_tps": 30.0},
+            }
+        ],
+    )
+    assert entry.sources[0].metrics["decode_tps"] == 30.0

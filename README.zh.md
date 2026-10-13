@@ -40,7 +40,7 @@ llm-cal 从 HF API 读真实 bytes，逐一对比所有已知量化方案，选�
 量化反演（实际观测 vs 各方案预测）
   FP4_FP8_MIXED    160.01 GB   0.2%  ← 最佳（与 GPTQ_INT4、AWQ_INT4 打平，
   GPTQ_INT4        160.01 GB   0.2%    bpp=0.55，区分需要读 per-tensor dtype，
-  AWQ_INT4         160.01 GB   0.2%    v0.2 再做）
+  AWQ_INT4         160.01 GB   0.2%    当前可读取抽样 header 区分）
   FP8              290.94 GB  45.1%  ← gpu_poor 会掉进这个坑
 ```
 
@@ -113,14 +113,14 @@ export LLM_CAL_REVIEWER_BASE_URL=https://api.deepseek.com/v1
 export LLM_CAL_REVIEWER_MODEL=deepseek-chat
 llm-cal deepseek-ai/DeepSeek-V3 --gpu H800 --explain --llm-review
 
-# 全部 53 款支持的 GPU
+# 全部支持的 GPU
 llm-cal --list-gpus
 
 # 跑 curated benchmark（8 模型 × 33 条检查对比真值）
 llm-cal --benchmark
 ```
 
-节选输出：
+输出示意（模型的当前估算值以 CLI 为准）：
 
 ```
 ┌─ deepseek-ai/DeepSeek-V4-Flash  via huggingface @ 6c858e7 ─┐
@@ -143,7 +143,7 @@ llm-cal --benchmark
 
 性能 — dev 档（4× H800）
   prefill 延迟       735 ms @ 2000 input tokens     [estimated, Kaplan 2020]
-  decode 吞吐        48 tok/s per user              [estimated, Kwon SOSP 2023]
+  decode 吞吐        <estimate> tok/s per user              [estimated, Kwon SOSP 2023]
   bottleneck         显存带宽                        [inferred]
 
 生成命令
@@ -162,6 +162,7 @@ llm-cal [MODEL_ID] [OPTIONS]
 
 核心：
   --gpu TEXT                     GPU id（见 --list-gpus），支持别名，大小写不敏感
+  --source [huggingface|modelscope]  默认：huggingface
   --engine [vllm|sglang]         默认：vllm
   --gpu-count INT                强制集群大小（跳过 min/dev/prod 自动选择）
   --context-length INT           KV 缓存估算用的 context 长度
@@ -181,14 +182,14 @@ llm-cal [MODEL_ID] [OPTIONS]
                                  需要：LLM_CAL_REVIEWER_API_KEY / _BASE_URL / _MODEL
 
 元命令：
-  --list-gpus                    列出全部 53 款支持的 GPU 并退出
+  --list-gpus                    列出全部支持的 GPU 并退出
   --benchmark                    跑 curated 数据集（8 模型 × 33 条检查）
   --refresh                      绕过缓存，重新从 HF/ModelScope 拉取
 ```
 
 ---
 
-## 支持的硬件（53 款 GPU）
+## 支持的硬件
 
 | 厂商 | 型号 |
 |---|---|
@@ -240,7 +241,7 @@ llm-cal [MODEL_ID] [OPTIONS]
 | `mistralai/Mixtral-8x7B-v0.1` | 93 GB | 93.41 GB | FP16 (MoE) | ✓ |
 | `microsoft/Phi-4` | 28 GB | 28.17 GB | FP16 | ✓ |
 
-全过 exit 0，任何 FAIL exit 1。可以挂 CI。
+仅全部 PASS 返回 exit 0；FAIL、SKIP 或空结果返回 exit 1。此检查依赖网络。
 
 ---
 
@@ -251,7 +252,7 @@ llm-cal [MODEL_ID] [OPTIONS]
 - **Prefill FLOPs**：`2 × params × input_tokens`（Kaplan et al. 2020, *Scaling Laws for Neural Language Models*）
 - **Decode 吞吐**：`bandwidth × util / weight_bytes`（Kwon et al. SOSP 2023, *Efficient Memory Management for LLM Serving with PagedAttention*，即 vLLM 论文）
 - **KV 缓存布局**：对齐 vLLM `PagedAttention` 和 SGLang `RadixAttention` 源码行为
-- **TP 分片**：`per_gpu_KV = total_KV / min(tp_size, num_kv_heads)`，经 vLLM 运行时实测验证
+- **TP 分片**：`per_gpu_KV = total_KV / min(tp_size, num_kv_heads)`，当前是建模规则，真实硬件校准见 issue #12
 - **利用率系数**：`prefill_util=0.40`、`decode_bw_util=0.50`、`concurrency_degradation=1.0`（诚实默认；按负载通过 CLI flag 覆盖）
 
 完整说明含引用：[`docs/methodology.md`](docs/methodology.md) · [`docs/zh/methodology.md`](docs/zh/methodology.md)。
@@ -273,6 +274,7 @@ llm-cal [MODEL_ID] [OPTIONS]
 **已交付：**
 
 - HuggingFace + ModelScope 作为模型源，`safetensors` 真实字节
+- 读取一个抽样 safetensors header 的 dtype 与量化标记；整模型量化方案仍标为 inferred
 - 架构识别：Dense / MoE / GQA / MQA / MLA / NSA / CSA+HCA / Sliding Window
 - KV 缓存含 traits 组合、TP 感知分片
 - Fleet planner（min/dev/prod、TP 整除约束）
@@ -285,11 +287,10 @@ llm-cal [MODEL_ID] [OPTIONS]
 - `--llm-review` opt-in LLM 审计（任意 OpenAI 兼容端点）
 - `--benchmark` curated 回归测试
 - `--list-gpus` 发现能力
-- 53 款 GPU 数据库带 `spec_source` 可追溯
+- GPU 数据库带 `spec_source` 可追溯
 
 **v0.2 路线图：**
 
-- 读 `safetensors` per-tensor dtype（区分 FP4 / GPTQ / AWQ 的 tie）
 - 矩阵超过 100 条时走 lazy loading
 - Ollama / GGUF 支持
 - 多模态模型（Qwen-VL、InternVL）

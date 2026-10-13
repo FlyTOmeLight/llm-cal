@@ -238,7 +238,7 @@ def render_page(report: EvaluationReport, locale: str) -> str:
             f"- **Prefill latency** {report.prefill.latency_ms.value:.0f} ms "
             f"@ {report.perf_input_tokens or 2000} input tokens "
             f"`[{t('label.' + report.prefill.latency_ms.label.value)}]`\n"
-            f"- **Cluster decode throughput** "
+            f"- **TP decode throughput (single request)** "
             f"{report.decode.cluster_tokens_per_sec.value:.0f} tok/s "
             f"`[{t('label.' + report.decode.cluster_tokens_per_sec.label.value)}]`\n"
             f"- **Max concurrent users** "
@@ -375,6 +375,7 @@ def main() -> int:
 
     evaluator = Evaluator()
     pages: list[PageInfo] = []
+    failures = 0
 
     for model_id, gpu, engine in COMBOS:
         slug = _slug(model_id, gpu)
@@ -389,7 +390,8 @@ def main() -> int:
                 target_tokens_per_sec=30.0,
             )
         except Exception as e:  # noqa: BLE001
-            print(f"   SKIP: {type(e).__name__}: {e}", flush=True)
+            print(f"   FAIL: {type(e).__name__}: {e}", flush=True)
+            failures += 1
             continue
 
         (out_en / f"{slug}.md").write_text(render_page(report, "en"), encoding="utf-8")
@@ -417,6 +419,11 @@ def main() -> int:
                 ),
             )
         )
+
+    evaluator.close()
+    if failures:
+        print(f"Refusing to publish incomplete model pages: {failures} evaluations failed.")
+        return 1
 
     (out_en / "index.md").write_text(render_index(pages, "en"), encoding="utf-8")
     (out_zh / "index.md").write_text(render_index(pages, "zh"), encoding="utf-8")

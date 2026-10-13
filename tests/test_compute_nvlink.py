@@ -101,9 +101,7 @@ class TestEstimateDecodeAppliesPenalty:
         weight_bytes = 14 * 1024**3
         h100 = estimate_decode(profile, weight_bytes, _gpu(nvlink=900), num_gpus=1)
         h800 = estimate_decode(profile, weight_bytes, _gpu(nvlink=400), num_gpus=1)
-        assert h100.cluster_tokens_per_sec.value == pytest.approx(
-            h800.cluster_tokens_per_sec.value
-        )
+        assert h100.cluster_tokens_per_sec.value == pytest.approx(h800.cluster_tokens_per_sec.value)
 
     def test_pcie_only_drops_cluster_tps(self):
         """L40S-class with no NVLink should land below H100 on multi-GPU."""
@@ -121,15 +119,20 @@ class TestEstimateDecodeAppliesPenalty:
         weight_bytes = 80 * 1024**3
         h100 = estimate_decode(profile, weight_bytes, _gpu(nvlink=900), num_gpus=8)
         h800 = estimate_decode(profile, weight_bytes, _gpu(nvlink=400), num_gpus=8)
-        assert h100.per_gpu_tokens_per_sec.value == pytest.approx(
-            h800.per_gpu_tokens_per_sec.value
-        )
+        assert h100.per_gpu_tokens_per_sec.value == pytest.approx(h800.per_gpu_tokens_per_sec.value)
 
     def test_provenance_string_mentions_nvlink(self):
         """Source string should let users see the NVLink penalty was applied."""
         profile = _dense_profile()
-        h800 = estimate_decode(
-            profile, 80 * 1024**3, _gpu(nvlink=400), num_gpus=8
-        )
+        h800 = estimate_decode(profile, 80 * 1024**3, _gpu(nvlink=400), num_gpus=8)
         assert "NVLink" in h800.cluster_tokens_per_sec.source
         assert "400" in h800.cluster_tokens_per_sec.source
+
+
+@pytest.mark.parametrize("count", [1, 2, 4, 8])
+def test_tp_bandwidth_scales_once(count):
+    """14 GB weights, 3000 GB/s BW at 50%: 107.14 tok/s * N * 0.9."""
+    gpu = _gpu(nvlink=900)
+    gpu.memory_bandwidth_gbps = 3000
+    report = estimate_decode(_dense_profile(), 14_000_000_000, gpu, num_gpus=count)
+    assert report.cluster_tokens_per_sec.value == pytest.approx((1500 / 14) * count * 0.90)

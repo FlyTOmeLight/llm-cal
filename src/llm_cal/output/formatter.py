@@ -152,6 +152,8 @@ def _render_weight(report: EvaluationReport, console: Console) -> None:
     table.add_column("label")
 
     w = report.weight
+    if w.total_bytes.label.value == "unknown" and w.total_bytes.source:
+        console.print(f"[yellow]{w.total_bytes.source}[/yellow]")
     table.add_row(
         t("weights.safetensors_bytes"),
         _fmt_bytes(w.total_bytes.value),

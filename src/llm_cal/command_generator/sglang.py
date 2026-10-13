@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from shlex import quote
+
 from llm_cal.architecture.profile import ArchitectureProfile
 from llm_cal.engine_compat.loader import EngineCompatEntry
 
@@ -16,7 +18,7 @@ def generate_sglang_command(
     """Generate a multi-line `python -m sglang.launch_server ...` command string."""
     lines: list[str] = [
         "python -m sglang.launch_server",
-        f"  --model-path {model_id}",
+        f"  --model-path {quote(model_id)}",
         f"  --tp {tensor_parallel_size}",
     ]
 
@@ -43,7 +45,7 @@ def generate_sglang_command(
 def _render_flag(flag: str, value: str | None) -> str:
     if value is None:
         return flag
-    return f"{flag} {value}"
+    return f"{flag} {quote(value)}"
 
 
 def _needs_trust_remote_code(model_type: str) -> bool:

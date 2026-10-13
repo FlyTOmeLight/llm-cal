@@ -9,7 +9,7 @@ git clone https://github.com/FlyTOmeLight/llm-cal.git
 cd llm-cal
 python3.11 -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev]"
+pip install -e ".[dev]" -r web/requirements.txt
 
 # one-time: install pre-commit hooks
 pre-commit install
@@ -63,7 +63,7 @@ needs an entry. Test in `tests/test_i18n.py`.
 
 ### 4. New sources
 
-ModelScope SDK decision pending — see `docs/adr/001-modelscope-integration-strategy.md`.
+ModelScope uses REST via httpx (accepted ADR-001); see [ADR-001](adr/001-modelscope-integration-strategy.md).
 Future sources (local directories, custom registries) go in
 `src/llm_cal/model_source/`.
 
@@ -97,7 +97,7 @@ Don't "upgrade" a `cited` to `verified` without actually running hardware.
 - Ruff-formatted, line length 100
 - mypy strict mode, no `# type: ignore` without a reason comment
 - Pydantic v2 for all YAML schemas
-- Keep `cli.py` thin (< 60 lines) — orchestration belongs in `core/evaluator.py`
+- Keep `cli.py` responsible for arguments and output; orchestration and input validation belong in `core/evaluator.py`
 
 Chinese punctuation is intentional in i18n / Chinese-facing error messages.
 If you add a file with Chinese content, add the path to the ruff
@@ -133,8 +133,7 @@ Good scope names match top-level modules: `architecture`, `fleet`,
 - **Fixture reuse over mocks** for config-based tests. Real model `config.json`
   samples live in `tests/fixtures/configs/`.
 
-- **No network in CI tests.** Use `responses` library fixtures (seeded by
-  `scripts/capture-fixtures.py` — planned for v0.1 finalization).
+- **No network in CI tests.** Use config fixtures, fake sources, and HTTP stubs. For httpx, patch the HTTP boundary; `responses` targets requests.
 
 ---
 

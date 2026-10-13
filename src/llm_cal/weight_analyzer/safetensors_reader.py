@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import struct
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 
@@ -62,6 +63,7 @@ def fetch_tensor_dtypes(
     shard_filename: str,
     endpoint: str | None = None,
     timeout_s: float = _DEFAULT_TIMEOUT_S,
+    token: str | None = None,
 ) -> dict[str, str] | None:
     """Range-fetch the safetensors header of one shard and return dtype map.
 
@@ -71,7 +73,7 @@ def fetch_tensor_dtypes(
     Supports HuggingFace and ModelScope. Other sources fall back to None
     so the reconciler still reports a verdict (without per-tensor refinement).
     """
-    url, headers = _build_request(source, model_id, revision, shard_filename, endpoint)
+    url, headers = _build_request(source, model_id, revision, shard_filename, endpoint, token)
     if url is None:
         return None
 
@@ -96,12 +98,13 @@ def _build_request(
     revision: str,
     shard_filename: str,
     endpoint: str | None,
+    token: str | None = None,
 ) -> tuple[str | None, dict[str, str]]:
     """Compose URL + auth headers for the source. Returns (None, {}) on unknown."""
     if source == "huggingface":
         base = (endpoint or "https://huggingface.co").rstrip("/")
         url = f"{base}/{model_id}/resolve/{revision}/{shard_filename}"
-        token = get_hf_token()
+        token = get_hf_token() if token is None else token
         headers = {"Authorization": f"Bearer {token}"} if token else {}
         return url, headers
     if source == "modelscope":
@@ -109,13 +112,10 @@ def _build_request(
         # 302-redirects to the underlying OSS object. httpx follows the
         # redirect; OSS honors Range natively.
         base = (endpoint or "https://www.modelscope.cn").rstrip("/")
-        # httpx will encode query params; build manually to keep this function
-        # ergonomically a one-liner that matches the rest of the module.
-        url = (
-            f"{base}/api/v1/models/{model_id}/repo"
-            f"?FilePath={shard_filename}&Revision={revision}"
-        )
-        token = get_modelscope_token()
+        # Encode filename and revision as query values, preserving reserved characters.
+        query = urlencode({"FilePath": shard_filename, "Revision": revision})
+        url = f"{base}/api/v1/models/{model_id}/repo?{query}"
+        token = get_modelscope_token() if token is None else token
         headers = {"Authorization": f"Bearer {token}"} if token else {}
         return url, headers
     return None, {}

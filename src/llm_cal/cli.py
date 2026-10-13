@@ -162,9 +162,7 @@ def main(
     elif src_lower in ("ms", "modelscope"):
         src_obj = ModelScopeSource()
     else:
-        _err.print(
-            f"[red]Unknown --source '{source}'. Use 'huggingface' or 'modelscope'.[/red]"
-        )
+        _err.print(f"[red]Unknown --source '{source}'. Use 'huggingface' or 'modelscope'.[/red]")
         raise typer.Exit(code=1)
 
     evaluator = Evaluator(source=src_obj)
@@ -183,6 +181,9 @@ def main(
             decode_bw_utilization=decode_bw_util,
             concurrency_degradation=concurrency_degradation,
         )
+    except ValueError as e:
+        _err.print(f"[bold red]{e}[/bold red]")
+        raise typer.Exit(code=1) from e
     except AuthRequiredError as e:
         _err.print(f"[bold red]{t('cli.err.auth_required')}[/bold red] {e}")
         sys.exit(2)
@@ -192,6 +193,9 @@ def main(
     except SourceUnavailableError as e:
         _err.print(f"[bold red]{t('cli.err.source_unavailable')}[/bold red] {e}")
         sys.exit(4)
+
+    finally:
+        evaluator.close()
 
     render(report, _console)
     explain_entries = build_explain(report) if (explain or llm_review) else []

@@ -45,15 +45,23 @@ def run_review(
     entries: list[ExplainEntry],
     locale: Locale,
     timeout_s: float = 60.0,
+    *,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    model: str | None = None,
 ) -> LLMReviewResult:
     """Send the derivation trace to an LLM for audit.
 
     Returns a LLMReviewResult. Never raises — always returns a result
     object even on failure.
     """
-    api_key = os.environ.get("LLM_CAL_REVIEWER_API_KEY")
-    base_url = os.environ.get("LLM_CAL_REVIEWER_BASE_URL", "https://api.openai.com/v1").rstrip("/")
-    model = os.environ.get("LLM_CAL_REVIEWER_MODEL", "gpt-4o")
+    api_key = os.environ.get("LLM_CAL_REVIEWER_API_KEY") if api_key is None else api_key
+    base_url = (
+        base_url
+        if base_url is not None
+        else os.environ.get("LLM_CAL_REVIEWER_BASE_URL", "https://api.openai.com/v1")
+    ).rstrip("/")
+    model = model if model is not None else os.environ.get("LLM_CAL_REVIEWER_MODEL", "gpt-4o")
 
     if not api_key:
         return LLMReviewResult(
@@ -109,7 +117,7 @@ def run_review(
     try:
         data = resp.json()
         content = data["choices"][0]["message"]["content"]
-    except (KeyError, ValueError) as e:
+    except (KeyError, ValueError, IndexError, TypeError) as e:
         return LLMReviewResult(
             ok=False,
             content=None,

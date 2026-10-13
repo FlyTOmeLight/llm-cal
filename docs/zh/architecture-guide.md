@@ -231,7 +231,8 @@ per_gpu_KV = total_KV / min(tp_size, max(1, num_kv_heads))
 |---|---|
 | HF API `model_info().siblings[].size` | `[verified]` |
 | `config.json` 字段直接读取 | `[verified]` |
-| `sum(safetensors file sizes)` | `[verified]`（直接读取，即使是求和）|
+| 完整、无歧义的 `sum(safetensors file sizes)` | `[verified]`；大小缺失或权重集合不明确时为 `[unknown]` |
+| 从一个抽样 header 识别整模型方案 | `[inferred]` |
 | `观测字节 / 参数数` = bits/param | `[inferred]` |
 | 最近锚点量化方案匹配 | `[inferred]` |
 | 基于 profile 算出的 KV cache | `[estimated]` |

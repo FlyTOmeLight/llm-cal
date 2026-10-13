@@ -31,7 +31,7 @@ deployspec:
 ## 架构感知 · 引擎感知 · 诚实标注
 
 每个数字都带 provenance label：
-- `[verified]` 实测过的
+- `[verified]` 从 API 或文件直接读取的
 - `[inferred]` 从 config 推出来的
 - `[estimated]` 用经验公式算的
 - `[cited]` 引用 PR / release note 的
@@ -42,7 +42,7 @@ deployspec:
 
 ## 国内用户重点
 
-- **支持 ModelScope 来源**：右上角切到 ModelScope，输入 `Qwen/Qwen3-30B-A3B` 这类 MS-原生 ID 即可。下载比 HF 快十倍
+- **支持 ModelScope 来源**：右上角切到 ModelScope，输入 `Qwen/Qwen3-30B-A3B` 这类 MS-原生 ID 即可。使用 ModelScope 元数据接口
 - **覆盖 11 家厂商**：NVIDIA / AMD / 华为昇腾 / 沐曦 / 昆仑芯 / 壁仞 / 天数智芯 / 摩尔线程 / 寒武纪 / 海光 / Intel Habana
 - **中英文界面共存**：标签全部双语
 

@@ -76,6 +76,7 @@ class FleetRecommendation:
     valid_tp_sizes: tuple[int, ...]
     constraint_note_en: str
     constraint_note_zh: str
+    reference_context_length: int = _REFERENCE_CTX_TOKENS
 
 
 def plan(
@@ -85,6 +86,7 @@ def plan(
     gpu: GPUSpec,
     forced_gpu_count: int | None = None,
     kv_bytes_by_context: dict[int, int] | None = None,
+    reference_context_length: int = _REFERENCE_CTX_TOKENS,
 ) -> FleetRecommendation:
     """Recommend GPU counts for the three tiers, or a single option when forced.
 
@@ -92,6 +94,8 @@ def plan(
     concurrency breakdown (e.g. "~23 concurrent @ 128K, ~2 @ 1M"). Tier-fit
     decisions still use `kv_bytes_per_request_at_ref` (the reference context).
     """
+    if forced_gpu_count is not None and forced_gpu_count <= 0:
+        raise ValueError("gpu_count must be a positive integer")
     kv_by_ctx = kv_bytes_by_context or {}
     bytes_per_gpu_total = gpu.memory_gb * 1_000_000_000
     usable_per_gpu = int(bytes_per_gpu_total * (1 - _OVERHEAD_FRACTION))
@@ -110,6 +114,7 @@ def plan(
             valid_tp=valid_tp,
             tier="dev",  # generic label when user forced
             kv_by_context=kv_by_ctx,
+            reference_context_length=reference_context_length,
         )
         return FleetRecommendation(
             options=(option,),
@@ -117,6 +122,7 @@ def plan(
             valid_tp_sizes=tuple(valid_tp),
             constraint_note_en=constraint_en,
             constraint_note_zh=constraint_zh,
+            reference_context_length=reference_context_length,
         )
 
     options: list[FleetOption] = []
@@ -140,6 +146,7 @@ def plan(
             valid_tp=valid_tp,
             tier=tier,
             kv_by_context=kv_by_ctx,
+            reference_context_length=reference_context_length,
         )
         options.append(option)
 
@@ -151,6 +158,7 @@ def plan(
         valid_tp_sizes=tuple(valid_tp),
         constraint_note_en=constraint_en,
         constraint_note_zh=constraint_zh,
+        reference_context_length=reference_context_length,
     )
 
 
@@ -215,6 +223,7 @@ def _evaluate_count(
     valid_tp: list[int],
     tier: Tier,
     kv_by_context: dict[int, int],
+    reference_context_length: int,
 ) -> FleetOption:
     weight_per_gpu = math.ceil(weight_bytes / gpu_count)
     shards = _kv_shards(profile, gpu_count)
@@ -230,7 +239,7 @@ def _evaluate_count(
         )
         for ctx, kv in sorted(kv_by_context.items())
     )
-    fits = _fits(
+    fits = gpu_count in valid_tp and _fits(
         gpu_count,
         profile,
         weight_bytes,
@@ -255,8 +264,10 @@ def _evaluate_count(
             f"{usable_per_gpu / 1e9:.1f} GB"
         )
     else:
-        reason_en = f"fits ~{max_concurrent} concurrent @ {_REFERENCE_CTX_TOKENS // 1024}K ctx"
-        reason_zh = f"可容纳约 {max_concurrent} 并发请求 @ {_REFERENCE_CTX_TOKENS // 1024}K 上下文"
+        reason_en = f"fits ~{max_concurrent} concurrent @ {reference_context_length // 1024}K ctx"
+        reason_zh = (
+            f"可容纳约 {max_concurrent} 并发请求 @ {reference_context_length // 1024}K 上下文"
+        )
 
     return FleetOption(
         tier=tier,

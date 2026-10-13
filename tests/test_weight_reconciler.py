@@ -134,8 +134,8 @@ class TestReconcilerFingerprint:
 
         # Declared scheme wins over argmin (which was FP4_FP8_MIXED by dict order)
         assert report.best.value == "AWQ_INT4"
-        # VERIFIED label because we read authoritative evidence
-        assert report.best.label.value == "verified"
+        # A shard fingerprint infers the whole-model scheme from a sample
+        assert report.best.label.value == "inferred"
         assert "AWQ marker" in (report.best.source or "")
 
     def test_fingerprint_gptq(self):
@@ -165,12 +165,12 @@ class TestReconcilerFingerprint:
         report = reconcile(observed, total_params, fingerprint=fp)
 
         assert report.best.value == "FP4_FP8_MIXED"
-        assert report.best.label.value == "verified"
+        assert report.best.label.value == "inferred"
 
-    def test_fingerprint_disagreement_still_trusts_declaration(self):
+    def test_fingerprint_disagreement_preserves_uncertainty(self):
         """Fingerprint says FP8 but bytes predict 45% off (classic gpu_poor trap).
 
-        We trust the declaration and flag the mismatch in source.
+        Keep the declaration visible but label the conflict unresolved.
         """
         observed = 160_300_000_000  # matches FP4_FP8_MIXED
         total_params = 284_000_000_000
@@ -183,7 +183,7 @@ class TestReconcilerFingerprint:
         report = reconcile(observed, total_params, fingerprint=fp_fp8)
 
         assert report.best.value == "FP8"
-        assert report.best.label.value == "verified"
+        assert report.best.label.value == "unknown"
         assert "NOTE" in (report.best.source or "")
         assert "off by" in (report.best.source or "")
 
@@ -202,3 +202,20 @@ class TestReconcilerFingerprint:
         # Falls back to argmin (FP4_FP8_MIXED by bytes)
         assert report.best.value == "FP4_FP8_MIXED"
         assert "fell back" in (report.best.source or "")
+
+
+def test_missing_shard_size_preserves_uncertainty():
+    report = analyze(
+        (SiblingFile("model-1.safetensors", 100), SiblingFile("model-2.safetensors", None)), 100
+    )
+    assert report.total_bytes.value == 100
+    assert report.total_bytes.label.value == "unknown"
+    assert report.bits_per_param is None
+    assert report.quantization_guess.label.value == "unknown"
+
+
+def test_nested_checkpoint_variants_are_not_summed_as_complete_model():
+    report = analyze(
+        (SiblingFile("fp16/model.safetensors", 200), SiblingFile("fp8/model.safetensors", 100)), 100
+    )
+    assert report.total_bytes.label.value == "unknown"

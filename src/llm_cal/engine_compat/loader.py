@@ -5,11 +5,11 @@ from __future__ import annotations
 from functools import lru_cache
 from importlib.resources import files
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Self
 
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from llm_cal.common.yaml_loader import load_yaml
 
@@ -34,6 +34,7 @@ class EngineSource(BaseModel):
     tester: str | None = None
     date: str | None = None
     hardware: str | None = None
+    metrics: dict[str, float] = Field(default_factory=dict)
 
 
 class EngineCompatEntry(BaseModel):
@@ -47,6 +48,22 @@ class EngineCompatEntry(BaseModel):
     sources: list[EngineSource] = Field(default_factory=list)
     caveats_en: list[str] = Field(default_factory=list)
     caveats_zh: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_evidence(self) -> Self:
+        SpecifierSet(self.version_spec)
+        if self.verification_level == "cited" and not any(
+            s.url and s.captured_date for s in self.sources
+        ):
+            raise ValueError("cited entries require a source URL and captured_date")
+        if self.verification_level == "verified" and not any(
+            s.type == "tested" and s.tester and s.date and s.hardware and s.metrics
+            for s in self.sources
+        ):
+            raise ValueError(
+                "verified entries require tested evidence with tester, date, hardware and metrics"
+            )
+        return self
 
 
 class EngineCompatMatrix(BaseModel):

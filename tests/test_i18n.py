@@ -76,3 +76,21 @@ def test_label_section_has_zh_and_en():
     assert t("weights.safetensors_bytes") == "safetensors bytes"
     set_locale("zh")
     assert t("weights.safetensors_bytes") == "safetensors 总字节"
+
+
+def test_concurrent_locale_is_request_scoped():
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    barrier = Barrier(2)
+
+    def translate(locale):
+        set_locale(locale)
+        barrier.wait(timeout=5)
+        return i18n.get_locale()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        en = pool.submit(translate, "en")
+        zh = pool.submit(translate, "zh")
+        assert en.result(timeout=10) == "en"
+        assert zh.result(timeout=10) == "zh"

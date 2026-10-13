@@ -23,6 +23,7 @@ from rich.table import Table
 
 from llm_cal.common.yaml_loader import load_yaml
 from llm_cal.core.evaluator import EvaluationReport, Evaluator
+from llm_cal.model_source.base import SourceUnavailableError
 
 Status = Literal["PASS", "FAIL", "SKIP"]
 
@@ -74,32 +75,37 @@ def run_all(
     dataset: BenchmarkDataset | None = None,
 ) -> list[CheckResult]:
     """Run every check in the dataset. Returns flat list of results."""
+    owns_evaluator = evaluator is None
     evaluator = evaluator or Evaluator()
     dataset = dataset or load_dataset()
     results: list[CheckResult] = []
-    for entry in dataset.entries:
-        try:
-            report = evaluator.evaluate(
-                model_id=entry.model_id,
-                gpu=entry.gpu,
-                engine=entry.engine,
-            )
-        except Exception as e:
-            for exp in entry.expectations:
-                results.append(
-                    CheckResult(
-                        entry_name=entry.name,
-                        field=exp.field,
-                        status="SKIP",
-                        predicted="(evaluation failed)",
-                        expected=_fmt_expected(exp),
-                        source=exp.source,
-                        note=f"{type(e).__name__}: {e}",
-                    )
+    try:
+        for entry in dataset.entries:
+            try:
+                report = evaluator.evaluate(
+                    model_id=entry.model_id,
+                    gpu=entry.gpu,
+                    engine=entry.engine,
                 )
-            continue
-        for exp in entry.expectations:
-            results.append(_check_one(entry.name, report, exp))
+            except Exception as e:
+                for exp in entry.expectations:
+                    results.append(
+                        CheckResult(
+                            entry_name=entry.name,
+                            field=exp.field,
+                            status="SKIP" if isinstance(e, SourceUnavailableError) else "FAIL",
+                            predicted="(evaluation failed)",
+                            expected=_fmt_expected(exp),
+                            source=exp.source,
+                            note=f"{type(e).__name__}: {e}",
+                        )
+                    )
+                continue
+            for exp in entry.expectations:
+                results.append(_check_one(entry.name, report, exp))
+    finally:
+        if owns_evaluator:
+            evaluator.close()
     return results
 
 
@@ -228,5 +234,5 @@ def render_results(results: list[CheckResult], console: Console | None = None) -
 
 
 def exit_code_from(results: list[CheckResult]) -> int:
-    """0 if all PASS or only SKIP; 1 if any FAIL."""
-    return 1 if any(r.status == "FAIL" for r in results) else 0
+    """Success requires every expected check to have passed."""
+    return 0 if results and all(r.status == "PASS" for r in results) else 1

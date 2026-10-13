@@ -24,6 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from llm_cal.output.labels import Label
 from llm_cal.weight_analyzer import QuantizationScheme
 
 SourceType = Literal["config_json", "safetensors_header"]
@@ -34,6 +35,10 @@ class QuantFingerprint:
     scheme: QuantizationScheme
     source_type: SourceType
     evidence: str  # for the derivation trace
+
+    @property
+    def label(self) -> Label:
+        return Label.VERIFIED if self.source_type == "config_json" else Label.INFERRED
 
 
 # ---------------------------------------------------------------------------

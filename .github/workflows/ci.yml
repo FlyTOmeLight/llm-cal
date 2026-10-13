@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        default: ""
 
 # Security: `${{ matrix.python-version }}` is a static value from strategy.matrix,
 # not user-controlled input. No github.event.*, head_ref, etc. are referenced.
@@ -20,6 +25,8 @@ jobs:
         python-version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -28,7 +35,7 @@ jobs:
           cache: pip
 
       - name: Install dev dependencies
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[dev]" -r web/requirements.txt
 
       - name: Ruff (lint + format check)
         run: |
@@ -37,6 +44,9 @@ jobs:
 
       - name: Mypy (strict)
         run: mypy src
+
+      - name: Compile Web and scripts
+        run: python -m compileall -q web scripts
 
       - name: Pytest
         run: pytest -q

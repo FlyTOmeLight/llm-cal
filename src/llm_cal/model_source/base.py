@@ -46,9 +46,16 @@ class ModelSource(ABC):
     """Abstract interface for HF / ModelScope / future sources."""
 
     name: str  # subclasses override
+    endpoint: str | None = None
+    token: str | None = None
+    revision: str = "main"
 
     @abstractmethod
-    def fetch(self, model_id: str) -> ModelArtifact:
+    def resolve_revision(self, model_id: str) -> str | None:
+        """Check current revision and access before consulting cached metadata."""
+
+    @abstractmethod
+    def fetch(self, model_id: str, revision: str | None = None) -> ModelArtifact:
         """Fetch config.json + siblings for the given model.
 
         Raises:
