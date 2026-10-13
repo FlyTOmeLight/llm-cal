@@ -1,8 +1,8 @@
 # Issue 处理进度
 
-以下代码修复已在本地完成，尚未合并或部署。GitHub issues 保持开放，合并修复后再关闭。
+修复已提交到 [草稿 PR #13](https://github.com/FlyTOmeLight/llm-cal/pull/13)，尚未合并或部署。#1–#11 将在合并后自动关闭；#12 保持开放，等待真实硬件测量。
 
-| Issue | 本地处理 |
+| Issue | 处理情况 |
 | --- | --- |
 | [P1：TP decode 吞吐出现二次 GPU 数放大](https://github.com/FlyTOmeLight/llm-cal/issues/1) | 已修复，包含离线回归或构建验证 |
 | [P1：非法 TP 仍可显示 fits=True 并生成命令](https://github.com/FlyTOmeLight/llm-cal/issues/2) | 已修复，包含离线回归或构建验证 |
@@ -19,6 +19,6 @@
 
 校准协议见 [calibration.md](calibration.md)。
 
-本次验证：271 项 pytest 通过；Ruff lint/format、mypy、actionlint、sdist/wheel 构建和 MkDocs strict 构建通过。打包从 sdist 构建 wheel，使用临时环境中的构建后端（`--no-isolation`）。
+本次验证：271 项 pytest 通过；GitHub CI 的 Python 3.11/3.12/3.13 检查全部通过；Ruff lint/format、mypy、actionlint、sdist/wheel 构建和 MkDocs strict 构建通过。打包从 sdist 构建 wheel，使用临时环境中的构建后端（`--no-isolation`）。
 
 未运行真实模型 benchmark 或 GPU 推理；预生成模型页仍为原有快照，下一次文档部署会使用修复后的生成器重新计算，任何模型评估失败都会阻止发布。
